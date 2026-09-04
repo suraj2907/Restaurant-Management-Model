@@ -446,26 +446,35 @@ document.querySelector('#expenseTable tbody').addEventListener('click', (e) => {
 });
 
 /* ================= STAFF & SALARY ================= */
+// Months elapsed (inclusive) between a staff's join month and the current month.
+function monthsElapsed(joinDate) {
+  const j = new Date(joinDate + 'T00:00:00');
+  const now = new Date();
+  return (now.getFullYear() - j.getFullYear()) * 12 + (now.getMonth() - j.getMonth()) + 1;
+}
+
 function renderStaff() {
   const staff = store.get('rm_staff', []);
   const payments = store.get('rm_salary_payments', []);
-  const month = thisMonthStr();
   const tbody = document.querySelector('#staffTable tbody');
   tbody.innerHTML = staff.map(s => {
-    const paid = payments.filter(p => p.staffId === s.id && p.date.startsWith(month)).reduce((sum, p) => sum + p.amount, 0);
-    const balance = s.salary - paid;
+    const totalPaid = payments.filter(p => p.staffId === s.id).reduce((sum, p) => sum + p.amount, 0);
+    const totalDue = s.salary * monthsElapsed(s.joinDate || todayStr());
+    const balance = totalDue - totalPaid;
     return `<tr>
       <td>${escapeHtml(s.name)}</td>
       <td>${escapeHtml(s.role)}</td>
       <td>${rupee(s.salary)}</td>
-      <td>${rupee(paid)}</td>
-      <td class="${balance > 0 ? 'low-stock' : 'ok-stock'}">${rupee(balance)}</td>
+      <td>${rupee(totalDue)}</td>
+      <td>${rupee(totalPaid)}</td>
+      <td class="${balance > 0 ? 'low-stock' : 'ok-stock'}">${balance > 0 ? rupee(balance) + ' pending' : rupee(-balance) + ' advance'}</td>
       <td>
         <button class="btn secondary small" data-pay="${s.id}">Pay Salary</button>
+        <button class="btn secondary small" data-history="${s.id}">History</button>
         <button class="link-btn" data-del-staff="${s.id}">Remove</button>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="6" class="empty-hint">Koi staff add nahi kiya abhi.</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-hint">Koi staff add nahi kiya abhi.</td></tr>`;
 
   const logBody = document.querySelector('#salaryLogTable tbody');
   logBody.innerHTML = payments.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0, 15).map(p => `
@@ -484,7 +493,8 @@ document.getElementById('staffForm').addEventListener('submit', (e) => {
     id: uid(),
     name: document.getElementById('staffName').value.trim(),
     role: document.getElementById('staffRole').value.trim(),
-    salary: parseFloat(document.getElementById('staffSalary').value)
+    salary: parseFloat(document.getElementById('staffSalary').value),
+    joinDate: todayStr()
   });
   store.set('rm_staff', staff);
   e.target.reset();
@@ -494,12 +504,44 @@ document.getElementById('staffForm').addEventListener('submit', (e) => {
 document.querySelector('#staffTable tbody').addEventListener('click', (e) => {
   const delId = e.target.dataset.delStaff;
   if (delId) {
+    if (!confirm('Ye staff member remove karein? Payment history save rahegi.')) return;
     store.set('rm_staff', store.get('rm_staff', []).filter(s => s.id !== delId));
     renderStaff();
     return;
   }
   const payId = e.target.dataset.pay;
-  if (payId) openSalaryModal(payId);
+  if (payId) { openSalaryModal(payId); return; }
+  const histId = e.target.dataset.history;
+  if (histId) openHistoryModal(histId);
+});
+
+function openHistoryModal(staffId) {
+  const staff = store.get('rm_staff', []).find(s => s.id === staffId);
+  if (!staff) return;
+  const payments = store.get('rm_salary_payments', [])
+    .filter(p => p.staffId === staffId)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+  const totalDue = staff.salary * monthsElapsed(staff.joinDate || todayStr());
+  const balance = totalDue - totalPaid;
+
+  document.getElementById('historyModalTitle').textContent = `Payment History — ${staff.name}`;
+  document.getElementById('historySummary').innerHTML = `
+    <div class="h-stat"><span class="h-label">Monthly Salary</span><span class="h-value">${rupee(staff.salary)}</span></div>
+    <div class="h-stat"><span class="h-label">Total Paid</span><span class="h-value">${rupee(totalPaid)}</span></div>
+    <div class="h-stat"><span class="h-label">${balance > 0 ? 'Pending' : 'Advance'}</span><span class="h-value">${rupee(Math.abs(balance))}</span></div>
+  `;
+  document.querySelector('#historyTable tbody').innerHTML = payments.map(p => `
+    <tr>
+      <td>${p.date}</td>
+      <td>${rupee(p.amount)}</td>
+      <td>${escapeHtml(p.note || '-')}</td>
+    </tr>`).join('') || `<tr><td colspan="3" class="empty-hint">Abhi tak koi payment nahi hua.</td></tr>`;
+
+  document.getElementById('historyModal').classList.remove('hidden');
+}
+document.getElementById('closeHistoryModalBtn').addEventListener('click', () => {
+  document.getElementById('historyModal').classList.add('hidden');
 });
 
 function openSalaryModal(staffId) {

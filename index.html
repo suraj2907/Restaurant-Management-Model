@@ -179,12 +179,12 @@
       <button type="submit" class="btn primary">Add Staff</button>
     </form>
     <table class="data-table" id="staffTable">
-      <thead><tr><th>Name</th><th>Role</th><th>Monthly Salary</th><th>Paid this month</th><th>Balance due</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Name</th><th>Role</th><th>Monthly Salary</th><th>Total Due (till date)</th><th>Total Paid</th><th>Balance</th><th>Actions</th></tr></thead>
       <tbody></tbody>
     </table>
 
     <div class="panel-head" style="margin-top:26px;">
-      <h2>Recent Salary Payments</h2>
+      <h2>Recent Salary Payments (all staff)</h2>
     </div>
     <table class="data-table" id="salaryLogTable">
       <thead><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Note</th></tr></thead>
@@ -248,6 +248,21 @@
         <button type="button" id="closeSalaryModalBtn" class="btn secondary">Cancel</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Staff payment history modal -->
+<div id="historyModal" class="modal hidden">
+  <div class="receipt-box wide">
+    <h3 id="historyModalTitle">Payment History</h3>
+    <div class="history-summary" id="historySummary"></div>
+    <table class="data-table" id="historyTable">
+      <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="modal-actions">
+      <button type="button" id="closeHistoryModalBtn" class="btn secondary">Close</button>
+    </div>
   </div>
 </div>
 

@@ -168,6 +168,11 @@ main{max-width:1200px; margin:0 auto; padding:20px 24px 60px;}
 .modal{position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:50;}
 .modal.hidden{display:none;}
 .receipt-box{background:#fff; width:320px; max-height:85vh; overflow-y:auto; border-radius:8px; padding:18px;}
+.receipt-box.wide{width:460px;}
+.history-summary{display:flex; gap:18px; margin:10px 0 14px; flex-wrap:wrap;}
+.history-summary .h-stat{background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 12px;}
+.history-summary .h-stat .h-label{display:block; font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;}
+.history-summary .h-stat .h-value{font-weight:700; font-size:1rem;}
 .modal-actions{display:flex; gap:10px; margin-top:14px;}
 #receiptContent{font-family:'Courier New',monospace; font-size:0.85rem;}
 #receiptContent .r-title{text-align:center; font-weight:700; font-size:1rem; margin-bottom:4px;}
