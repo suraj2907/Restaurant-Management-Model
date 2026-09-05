@@ -3,7 +3,7 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { dbInsert } from '../lib/db.js';
 import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonCards } from '../components/Skeleton.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
@@ -77,6 +77,8 @@ export default function StaffTab() {
   const [removeStaffTarget, setRemoveStaffTarget] = useState(null);
   const [editPayment, setEditPayment] = useState(null);
   const [removePaymentTarget, setRemovePaymentTarget] = useState(null);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('All');
 
   function addStaff(e) {
     e.preventDefault();
@@ -150,6 +152,18 @@ export default function StaffTab() {
     setRemovePaymentTarget(null);
   }
 
+  async function quickAdvance(e) {
+    e.preventDefault();
+    const f = e.target;
+    const staffMember = staff.find((s) => s.id === f.staffId.value);
+    const amount = parseFloat(f.amount.value);
+    if (!staffMember || !amount || amount <= 0) return;
+    const date = todayStr();
+    setPayments([...payments, { id: uid(), staffId: staffMember.id, staffName: staffMember.name, date, amount, note: 'Quick cash advance', type: 'advance' }]);
+    await dbInsert('expenses', { id: uid(), date, category: 'Staff Salary', note: `Advance/peshgi paid to ${staffMember.name} - Quick cash advance`, amount });
+    f.reset();
+  }
+
   function markAttendanceOn(date, staffId, staffName, status) {
     setAttendance((prev) => {
       const existing = prev.find((a) => a.staffId === staffId && a.date === date);
@@ -185,10 +199,43 @@ export default function StaffTab() {
   const today = todayStr();
   const totalWageDue = staffRows.reduce((s, x) => s + Math.max(0, x.balance), 0);
   const totalAdvance = staffRows.reduce((s, x) => s + Math.max(0, -x.balance), 0);
-  const presentTodayCount = staff.filter((s) => {
-    const st = attendance.find((a) => a.staffId === s.id && a.date === today)?.status;
-    return st === 'present' || st === 'half-day';
-  }).length;
+
+  const todayAttendanceByStaff = useMemo(() => {
+    const map = {};
+    for (const s of staff) map[s.id] = attendance.find((a) => a.staffId === s.id && a.date === today)?.status;
+    return map;
+  }, [staff, attendance, today]);
+
+  const presentTodayCount = staff.filter((s) => todayAttendanceByStaff[s.id] === 'present' || todayAttendanceByStaff[s.id] === 'half-day').length;
+  const absentTodayCount = staff.filter((s) => todayAttendanceByStaff[s.id] === 'absent').length;
+  const halfDayTodayCount = staff.filter((s) => todayAttendanceByStaff[s.id] === 'half-day').length;
+  const leaveTodayCount = staff.filter((s) => todayAttendanceByStaff[s.id] === 'leave').length;
+  const attendanceRate = staff.length ? (presentTodayCount / staff.length) * 100 : 0;
+
+  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const dayOfMonth = new Date().getDate();
+  const estWageBurnToday = staff.reduce((sum, s) => {
+    const st = todayAttendanceByStaff[s.id];
+    const mult = st === 'present' ? 1 : st === 'half-day' ? 0.5 : 0;
+    const dailyRate = s.wageType === 'daily' ? s.salary : s.salary / daysInMonth;
+    return sum + dailyRate * mult;
+  }, 0);
+
+  const todayTips = tips.filter((t) => t.date === today).reduce((s, t) => s + t.amount, 0);
+  const tipsPerPerson = presentTodayCount ? todayTips / presentTodayCount : 0;
+
+  const monthGrossLiability = staff.reduce((sum, s) => {
+    const monthAttendance = attendance.filter((a) => a.staffId === s.id && a.date.startsWith(today.slice(0, 7)));
+    const monthPresentDays = monthAttendance.reduce((d, a) => d + (a.status === 'present' ? 1 : a.status === 'half-day' ? 0.5 : 0), 0);
+    return sum + (s.wageType === 'daily' ? monthPresentDays * s.salary : s.salary);
+  }, 0);
+  const monthAdvanceIssued = payments.filter((p) => p.type === 'advance' && p.date.startsWith(today.slice(0, 7))).reduce((s, p) => s + p.amount, 0);
+
+  const roles = useMemo(() => ['All', ...new Set(staff.map((s) => s.role).filter(Boolean))], [staff]);
+  const visibleStaffRows = staffRows.filter((s) =>
+    (roleFilter === 'All' || s.role === roleFilter) &&
+    (s.name.toLowerCase().includes(search.toLowerCase()) || s.role.toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <section>
@@ -202,22 +249,32 @@ export default function StaffTab() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
         <div className="bg-surface border border-border rounded-lg p-3">
-          <span className="block text-[0.68rem] text-muted uppercase">Total Staff</span>
-          <span className="font-extrabold text-xl">{staff.length}</span>
-        </div>
-        <div className="rounded-lg p-3" style={{ background: '#DCFCE7' }}>
-          <span className="block text-[0.68rem] uppercase text-good-text">Present Today</span>
-          <span className="font-extrabold text-xl text-good-text">{presentTodayCount}/{staff.length}</span>
-        </div>
-        <div className="rounded-lg p-3" style={{ background: '#FEE2E2' }}>
-          <span className="block text-[0.68rem] uppercase text-bad">Wage Due (till date)</span>
-          <span className="font-extrabold text-xl text-bad">{rupee(totalWageDue)}</span>
+          <div className="flex items-center justify-between">
+            <span className="block text-[0.68rem] text-muted uppercase">Aaj ki Hazri ({staff.length} Staff)</span>
+            {staff.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-good/15 text-good text-[0.6rem] font-bold">{attendanceRate.toFixed(0)}%</span>}
+          </div>
+          <span className="font-extrabold text-2xl block">{presentTodayCount}</span>
+          <span className="text-[0.68rem] text-muted">{absentTodayCount} Absent • {halfDayTodayCount} Half • {leaveTodayCount} Leave</span>
         </div>
         <div className="bg-surface border border-border rounded-lg p-3">
-          <span className="block text-[0.68rem] text-muted uppercase">Advance Outstanding</span>
-          <span className="font-extrabold text-xl">{rupee(totalAdvance)}</span>
+          <span className="block text-[0.68rem] text-muted uppercase">Dainik Wage Burn (Est.)</span>
+          <span className="font-extrabold text-2xl block">{rupee(estWageBurnToday)}</span>
+          <span className="text-[0.68rem] text-muted">Aaj present staff ke hisaab se</span>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Tips Pool (Today)</span>
+          <span className="font-extrabold text-2xl block">{rupee(todayTips)}</span>
+          <span className="text-[0.68rem] text-muted">{rupee(tipsPerPerson)}/person ({presentTodayCount} present)</span>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: '#FEF3C7' }}>
+          <div className="flex items-center justify-between">
+            <span className="block text-[0.68rem] uppercase text-pending-text">Month Payroll Cycle</span>
+            <span className="text-[0.6rem] font-bold text-pending-text">Day {dayOfMonth}/{daysInMonth}</span>
+          </div>
+          <span className="font-extrabold text-lg block text-pending-text">{rupee(monthGrossLiability)}</span>
+          <span className="text-[0.68rem] text-pending-text">Peshgi issued: {rupee(monthAdvanceIssued)}</span>
         </div>
       </div>
 
@@ -232,63 +289,96 @@ export default function StaffTab() {
         <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Staff</button>
       </form>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-        {!staffLoaded && <SkeletonCards count={4} />}
-        {staffLoaded && staffRows.length === 0 && <p className="text-muted text-sm col-span-full">Koi staff add nahi kiya abhi.</p>}
-        {staffLoaded && staffRows.map((s) => {
-          const todayStatus = attendance.find((a) => a.staffId === s.id && a.date === today)?.status;
-          return (
-            <div key={s.id} className="bg-surface border border-border rounded-xl p-3.5 shadow-card flex flex-col gap-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="font-bold text-sm block">{s.name}</span>
-                  <span className="text-xs text-muted">{s.role} • {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}</span>
-                </div>
-                <span className={`px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase ${todayStatus ? ATTENDANCE_STYLE[todayStatus] : 'bg-well text-muted'}`}>
-                  {todayStatus ? ATTENDANCE_LABEL[todayStatus] : 'Not Marked'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
-                <div>
-                  <span className="block text-[0.6rem] text-muted uppercase">This Month</span>
-                  <span className="font-bold text-sm">{s.presentDays} din</span>
-                </div>
-                <div>
-                  <span className="block text-[0.6rem] text-muted uppercase">Total Due</span>
-                  <span className="font-bold text-sm">{rupee(s.totalDue)}</span>
-                </div>
-                <div>
-                  <span className="block text-[0.6rem] text-muted uppercase">Balance</span>
-                  <span className={`font-bold text-sm ${s.balance > 0 ? 'text-bad' : 'text-good'}`}>{s.balance > 0 ? rupee(s.balance) : `${rupee(-s.balance)} adv`}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-1.5">
-                {ATTENDANCE_STATUS.map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => markAttendanceOn(today, s.id, s.name, st)}
-                    title={ATTENDANCE_LABEL[st]}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-bold border ${
-                      todayStatus === st ? ATTENDANCE_STYLE[st] + ' border-transparent' : 'bg-bg border-border text-muted'
-                    }`}
-                  >
-                    {ATTENDANCE_LABEL[st][0]}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2 flex-wrap">
-                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>Pay Salary</button>
-                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>History</button>
-                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>Edit</button>
-                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setRemoveStaffTarget(s)}>Remove</button>
-              </div>
-            </div>
-          );
-        })}
+      <div className="flex items-center gap-2.5 flex-wrap mb-3.5">
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search staff by name or role..." className="px-2.5 py-2 border border-border rounded-md text-sm flex-1 min-w-[180px]" />
+        <div className="flex gap-1.5 flex-wrap">
+          {roles.map((r) => (
+            <button
+              key={r}
+              onClick={() => setRoleFilter(r)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${roleFilter === r ? 'bg-accent text-white border-accent' : 'bg-surface border-border text-muted'}`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
       </div>
+
+      <TableScroll>
+        <DataTable columns={['Staff Member', 'Attendance', 'Salary Basis', 'Month Peshgi', 'Net Payable (till date)', 'Quick Action']}>
+          {!staffLoaded && <SkeletonRows rows={4} cols={6} />}
+          {staffLoaded && visibleStaffRows.length === 0 && <EmptyRow span={6}>Koi staff nahi mila.</EmptyRow>}
+          {staffLoaded && visibleStaffRows.map((s) => {
+            const todayStatus = todayAttendanceByStaff[s.id];
+            const monthAdvance = payments.filter((p) => p.staffId === s.id && p.type === 'advance' && p.date.startsWith(today.slice(0, 7))).reduce((sum, p) => sum + p.amount, 0);
+            return (
+              <tr key={s.id}>
+                <td className={td}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-8 h-8 rounded-full bg-accent/15 text-accent-dark flex items-center justify-center font-bold text-xs shrink-0">
+                      {s.name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <div>
+                      <span className="font-semibold block">{s.name}</span>
+                      <span className="text-xs text-muted">{s.role}</span>
+                    </div>
+                  </div>
+                </td>
+                <td className={td}>
+                  <div className="flex gap-1">
+                    {ATTENDANCE_STATUS.map((st) => (
+                      <button
+                        key={st}
+                        onClick={() => markAttendanceOn(today, s.id, s.name, st)}
+                        title={ATTENDANCE_LABEL[st]}
+                        className={`w-7 h-7 rounded-md text-xs font-bold border ${
+                          todayStatus === st ? ATTENDANCE_STYLE[st] + ' border-transparent' : 'bg-bg border-border text-muted'
+                        }`}
+                      >
+                        {ATTENDANCE_LABEL[st][0]}
+                      </button>
+                    ))}
+                  </div>
+                </td>
+                <td className={td}>
+                  {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}
+                  <span className="block text-xs text-muted">{s.wageType === 'daily' ? 'Daily Dihadi' : 'Fixed Monthly'}</span>
+                </td>
+                <td className={td}>{monthAdvance > 0 ? rupee(monthAdvance) : '-'}</td>
+                <td className={`${td} ${s.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
+                  {s.balance > 0 ? `${rupee(s.balance)} due` : `${rupee(-s.balance)} advance`}
+                </td>
+                <td className={`${td} space-x-1.5 whitespace-nowrap`}>
+                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>Pay</button>
+                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>Khata</button>
+                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>Edit</button>
+                  <button className="text-bad underline text-sm" onClick={() => setRemoveStaffTarget(s)}>Remove</button>
+                </td>
+              </tr>
+            );
+          })}
+        </DataTable>
+      </TableScroll>
+
+      {staff.length > 0 && (
+        <div className="bg-surface border border-border rounded-lg p-3.5 mt-4">
+          <h3 className="font-bold text-sm mb-1">Quick Cash Advance (Peshgi)</h3>
+          <p className="text-muted text-xs mb-3">Staff ko turant advance dena ho to yahan se seedha log karein — salary khata aur Expenses dono mein apne aap add ho jayega.</p>
+          <form onSubmit={quickAdvance} className="flex gap-2.5 flex-wrap items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted font-semibold">Staff</label>
+              <select name="staffId" required className="px-2.5 py-2 border border-border rounded-md text-sm">
+                {staff.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted font-semibold">Amount</label>
+              <input name="amount" type="number" step="0.01" required placeholder="e.g. 1000" className="px-2.5 py-2 border border-border rounded-md text-sm w-32" />
+            </div>
+            <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Pay Peshgi</button>
+          </form>
+        </div>
+      )}
 
       <h2 className="text-lg font-bold mt-6 mb-3.5">Recent Salary Payments (all staff)</h2>
       <p className="text-muted text-xs -mt-2 mb-3.5">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { nextOrderNumber, dbInsert } from '../lib/db.js';
@@ -12,6 +12,7 @@ export default function BillingTab({ restaurantName }) {
   const [tables, setTables] = useLocalState('rm_tables', []);
   const [openOrders, setOpenOrders] = useLocalState('rm_open_orders', {});
   const [kotSent, setKotSent] = useLocalState('rm_kot_sent', {}); // { table: { menuId: qtyAlreadySentToKitchen } }
+  const [tableMeta, setTableMeta] = useLocalState('rm_table_meta', {}); // { table: { startedAt, steward } }
   const [menu] = useSupabaseTable('menu', []);
   const [staff] = useSupabaseTable('staff', []);
   const [bills, setBills] = useSupabaseTable('bills', []);
@@ -30,6 +31,14 @@ export default function BillingTab({ restaurantName }) {
   const [kot, setKot] = useState(null); // { table, items, ts }
   const [addTableOpen, setAddTableOpen] = useState(false);
   const [confirmRemoveTable, setConfirmRemoveTable] = useState(null);
+  const [, setTick] = useState(0);
+
+  // Keeps the per-table "Xm" elapsed-time badge live without needing any
+  // other state to change.
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   const items = activeTable ? openOrders[activeTable] || [] : [];
   const subtotal = items.reduce((s, o) => s + o.price * o.qty, 0);
@@ -78,11 +87,19 @@ export default function BillingTab({ restaurantName }) {
       delete next[name];
       return next;
     });
+    setTableMeta((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     if (activeTable === name) setActiveTable(null);
   }
 
   function addItem(menuItem) {
     if (!activeTable) { alert('Pehle ek table/token select karein.'); return; }
+    if (!(openOrders[activeTable] || []).length) {
+      setTableMeta((prev) => ({ ...prev, [activeTable]: { ...prev[activeTable], startedAt: Date.now() } }));
+    }
     updateOrder(activeTable, (arr) => {
       const existing = arr.find((o) => o.menuId === menuItem.id);
       if (existing) return arr.map((o) => (o.menuId === menuItem.id ? { ...o, qty: o.qty + 1 } : o));
@@ -106,6 +123,11 @@ export default function BillingTab({ restaurantName }) {
     if (!activeTable) return;
     updateOrder(activeTable, () => []);
     setKotSent((prev) => {
+      const next = { ...prev };
+      delete next[activeTable];
+      return next;
+    });
+    setTableMeta((prev) => {
       const next = { ...prev };
       delete next[activeTable];
       return next;
@@ -189,18 +211,43 @@ export default function BillingTab({ restaurantName }) {
       return next;
     });
     setKotTickets(kotTickets.map((k) => (k.tableName === activeTable && k.status !== 'served' ? { ...k, status: 'served' } : k)));
+    setTableMeta((prev) => {
+      const next = { ...prev };
+      delete next[activeTable];
+      return next;
+    });
     setCustomerPhone('');
     setServedBy('');
     setReceipt({ bill, mode: 'print' });
   }
 
+  function selectTable(t) {
+    setActiveTable(t);
+    setServedBy(tableMeta[t]?.stewardId || '');
+  }
+
   const filteredMenu = menu.filter((m) => m.available !== false && m.name.toLowerCase().includes(search.toLowerCase()));
+
+  const occupiedCount = tables.filter((t) => (openOrders[t] || []).length > 0).length;
+  const kotRunningCount = tables.filter((t) => Object.keys(kotSent[t] || {}).length > 0).length;
+  const todayRevenue = bills.filter((b) => new Date(b.ts).toISOString().slice(0, 10) === todayStr()).reduce((s, b) => s + b.total, 0);
 
   return (
     <section>
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <h2 className="text-lg font-bold m-0">Floor / Table Status</h2>
         <button onClick={() => setAddTableOpen(true)} className="px-3.5 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent-dark">+ Table</button>
+      </div>
+
+      <div className="flex items-center gap-2.5 flex-wrap text-xs font-semibold mb-4 bg-ink text-white rounded-lg px-3.5 py-2.5">
+        <span className="uppercase text-white/60 tracking-wide">Floor Live Status:</span>
+        <span className="px-2 py-0.5 rounded-full bg-white/15">All Tables {tables.length}</span>
+        <span className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(254,243,199,0.25)' }}>● Occupied {occupiedCount}</span>
+        <span className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(220,252,231,0.25)' }}>● Vacant {tables.length - occupiedCount}</span>
+        <span className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(254,226,226,0.25)' }}>● KOT Running {kotRunningCount}</span>
+        <span className="flex-1" />
+        <span className="text-white/60">Today's Gross:</span>
+        <span className="text-white">{rupee(todayRevenue)}</span>
       </div>
 
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5 mb-5">
@@ -211,11 +258,14 @@ export default function BillingTab({ restaurantName }) {
           const kotFired = Object.keys(kotSent[t] || {}).length > 0;
           const todaysReservation = reservations.find((r) => r.table === t && r.date === todayStr() && r.status === 'upcoming');
           const isActive = t === activeTable;
+          const meta = tableMeta[t];
+          const steward = meta?.stewardId ? staff.find((s) => s.id === meta.stewardId)?.name : null;
+          const elapsedMin = hasOrder && meta?.startedAt ? Math.floor((Date.now() - meta.startedAt) / 60000) : null;
           return (
             <div
               key={t}
-              onClick={() => setActiveTable(t)}
-              className={`relative rounded-xl border-2 p-3 cursor-pointer transition-all flex flex-col gap-1.5 min-h-[92px] ${
+              onClick={() => selectTable(t)}
+              className={`relative rounded-xl border-2 p-3 cursor-pointer transition-all flex flex-col gap-1.5 min-h-[100px] ${
                 isActive
                   ? 'bg-accent border-accent text-white shadow-tile'
                   : hasOrder
@@ -236,12 +286,20 @@ export default function BillingTab({ restaurantName }) {
               >
                 ×
               </span>
-              <span className="font-headline-sm text-lg font-extrabold leading-none">{t}</span>
+              <div className="flex items-center justify-between">
+                <span className="font-headline-sm text-lg font-extrabold leading-none">{t}</span>
+                {elapsedMin !== null && (
+                  <span className={`text-[0.6rem] font-bold ${isActive ? 'text-white/80' : 'text-muted'}`}>{elapsedMin}m</span>
+                )}
+              </div>
               <span className={`inline-flex w-fit items-center px-1.5 py-0.5 rounded-full text-[0.62rem] font-bold uppercase ${
                 isActive ? 'bg-white/25 text-white' : hasOrder ? 'text-pending-text' : 'text-good-text'
               }`}>
                 {hasOrder ? (kotFired ? 'KOT Sent' : 'Running') : 'Vacant'}
               </span>
+              {steward && (
+                <span className={`text-[0.62rem] ${isActive ? 'text-white/80' : 'text-muted'}`}>Steward: {steward}</span>
+              )}
               {hasOrder && <span className="font-bold text-sm mt-auto">{rupee(tableTotal)}</span>}
               {todaysReservation && (
                 <span className={`text-[0.65rem] font-bold ${isActive ? 'text-white/90' : 'text-accent-dark'}`}>
@@ -366,8 +424,15 @@ export default function BillingTab({ restaurantName }) {
           <div className="px-4">
             {staff.length > 0 && (
               <div className="flex gap-2.5 mt-2 flex-wrap items-center text-sm">
-                <label className="text-muted">Served by:</label>
-                <select value={servedBy} onChange={(e) => setServedBy(e.target.value)} className="px-2 py-1.5 border border-border rounded-md">
+                <label className="text-muted">Steward / Served by:</label>
+                <select
+                  value={servedBy}
+                  onChange={(e) => {
+                    setServedBy(e.target.value);
+                    if (activeTable) setTableMeta((prev) => ({ ...prev, [activeTable]: { ...prev[activeTable], stewardId: e.target.value } }));
+                  }}
+                  className="px-2 py-1.5 border border-border rounded-md"
+                >
                   <option value="">Not specified</option>
                   {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
