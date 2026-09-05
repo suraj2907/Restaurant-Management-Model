@@ -243,6 +243,7 @@ alter table menu add column if not exists available boolean not null default tru
 
 -- Staff: daily-wage ("dihadi") vs monthly, and advance/peshgi vs regular salary.
 alter table staff add column if not exists wage_type text not null default 'monthly';
+alter table staff add column if not exists phone text;
 alter table salary_payments add column if not exists type text not null default 'salary';
 
 -- Reservations: advance/token deposit amount (waitlist itself just reuses status='waitlist').

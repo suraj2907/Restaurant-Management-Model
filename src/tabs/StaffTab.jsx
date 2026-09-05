@@ -3,7 +3,7 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { dbInsert } from '../lib/db.js';
 import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonRows } from '../components/Skeleton.jsx';
+import { SkeletonRows, SkeletonCards } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
@@ -85,7 +85,7 @@ export default function StaffTab() {
     const f = e.target;
     setStaff([
       ...staff,
-      { id: uid(), name: f.name.value.trim(), role: f.role.value.trim(), salary: parseFloat(f.salary.value), wageType: f.wageType.value, joinDate: todayStr() }
+      { id: uid(), name: f.name.value.trim(), role: f.role.value.trim(), phone: f.phone.value.trim(), salary: parseFloat(f.salary.value), wageType: f.wageType.value, joinDate: todayStr() }
     ]);
     f.reset();
   }
@@ -97,6 +97,7 @@ export default function StaffTab() {
       ...s,
       name: f.name.value.trim(),
       role: f.role.value.trim(),
+      phone: f.phone.value.trim(),
       salary: parseFloat(f.salary.value),
       wageType: f.wageType.value
     } : s)));
@@ -281,6 +282,7 @@ export default function StaffTab() {
       <form onSubmit={addStaff} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Staff name" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="role" required placeholder="Role (e.g. Waiter, Cook)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <input name="phone" placeholder="Phone (optional)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <select name="wageType" defaultValue="monthly" className="px-2.5 py-2 border border-border rounded-md text-sm">
           <option value="monthly">Monthly Salary</option>
           <option value="daily">Daily Wage (Dihadi)</option>
@@ -304,61 +306,135 @@ export default function StaffTab() {
         </div>
       </div>
 
-      <TableScroll>
-        <DataTable columns={['Staff Member', 'Attendance', 'Salary Basis', 'Month Peshgi', 'Net Payable (till date)', 'Quick Action']}>
-          {!staffLoaded && <SkeletonRows rows={4} cols={6} />}
-          {staffLoaded && visibleStaffRows.length === 0 && <EmptyRow span={6}>Koi staff nahi mila.</EmptyRow>}
-          {staffLoaded && visibleStaffRows.map((s) => {
-            const todayStatus = todayAttendanceByStaff[s.id];
-            const monthAdvance = payments.filter((p) => p.staffId === s.id && p.type === 'advance' && p.date.startsWith(today.slice(0, 7))).reduce((sum, p) => sum + p.amount, 0);
-            return (
-              <tr key={s.id}>
-                <td className={td}>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-8 h-8 rounded-full bg-accent/15 text-accent-dark flex items-center justify-center font-bold text-xs shrink-0">
-                      {s.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <div>
-                      <span className="font-semibold block">{s.name}</span>
-                      <span className="text-xs text-muted">{s.role}</span>
+      {/* Desktop: dense table */}
+      <div className="hidden sm:block">
+        <TableScroll>
+          <DataTable columns={['Staff Member', 'Attendance', 'Salary Basis', 'Month Peshgi', 'Net Payable (till date)', 'Quick Action']}>
+            {!staffLoaded && <SkeletonRows rows={4} cols={6} />}
+            {staffLoaded && visibleStaffRows.length === 0 && <EmptyRow span={6}>Koi staff nahi mila.</EmptyRow>}
+            {staffLoaded && visibleStaffRows.map((s) => {
+              const todayStatus = todayAttendanceByStaff[s.id];
+              const monthAdvance = payments.filter((p) => p.staffId === s.id && p.type === 'advance' && p.date.startsWith(today.slice(0, 7))).reduce((sum, p) => sum + p.amount, 0);
+              return (
+                <tr key={s.id}>
+                  <td className={td}>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-8 h-8 rounded-full bg-accent/15 text-accent-dark flex items-center justify-center font-bold text-xs shrink-0">
+                        {s.name.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div>
+                        <span className="font-semibold block">{s.name}</span>
+                        <span className="text-xs text-muted">{s.role}</span>
+                      </div>
                     </div>
+                  </td>
+                  <td className={td}>
+                    <div className="flex gap-1">
+                      {ATTENDANCE_STATUS.map((st) => (
+                        <button
+                          key={st}
+                          onClick={() => markAttendanceOn(today, s.id, s.name, st)}
+                          title={ATTENDANCE_LABEL[st]}
+                          className={`w-7 h-7 rounded-md text-xs font-bold border ${
+                            todayStatus === st ? ATTENDANCE_STYLE[st] + ' border-transparent' : 'bg-bg border-border text-muted'
+                          }`}
+                        >
+                          {ATTENDANCE_LABEL[st][0]}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                  <td className={td}>
+                    {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}
+                    <span className="block text-xs text-muted">{s.wageType === 'daily' ? 'Daily Dihadi' : 'Fixed Monthly'}</span>
+                  </td>
+                  <td className={td}>{monthAdvance > 0 ? rupee(monthAdvance) : '-'}</td>
+                  <td className={`${td} ${s.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
+                    {s.balance > 0 ? `${rupee(s.balance)} due` : `${rupee(-s.balance)} advance`}
+                  </td>
+                  <td className={`${td} space-x-1.5 whitespace-nowrap`}>
+                    <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>Pay</button>
+                    <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>Khata</button>
+                    <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>Edit</button>
+                    <button className="text-bad underline text-sm" onClick={() => setRemoveStaffTarget(s)}>Remove</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </DataTable>
+        </TableScroll>
+      </div>
+
+      {/* Mobile: roster cards */}
+      <div className="sm:hidden flex flex-col gap-3">
+        {!staffLoaded && <SkeletonCards count={3} />}
+        {staffLoaded && visibleStaffRows.length === 0 && <p className="text-muted text-sm">Koi staff nahi mila.</p>}
+        {staffLoaded && visibleStaffRows.map((s) => {
+          const todayStatus = todayAttendanceByStaff[s.id];
+          const monthAdvance = payments.filter((p) => p.staffId === s.id && p.type === 'advance' && p.date.startsWith(today.slice(0, 7))).reduce((sum, p) => sum + p.amount, 0);
+          return (
+            <div key={s.id} className="bg-surface border border-border rounded-xl p-3.5 shadow-card flex flex-col gap-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-9 h-9 rounded-full bg-accent/15 text-accent-dark flex items-center justify-center font-bold text-sm shrink-0">
+                    {s.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="font-bold text-sm block truncate">{s.name}</span>
+                    <span className="text-xs text-muted">{s.role}</span>
                   </div>
-                </td>
-                <td className={td}>
-                  <div className="flex gap-1">
-                    {ATTENDANCE_STATUS.map((st) => (
-                      <button
-                        key={st}
-                        onClick={() => markAttendanceOn(today, s.id, s.name, st)}
-                        title={ATTENDANCE_LABEL[st]}
-                        className={`w-7 h-7 rounded-md text-xs font-bold border ${
-                          todayStatus === st ? ATTENDANCE_STYLE[st] + ' border-transparent' : 'bg-bg border-border text-muted'
-                        }`}
-                      >
-                        {ATTENDANCE_LABEL[st][0]}
-                      </button>
-                    ))}
-                  </div>
-                </td>
-                <td className={td}>
-                  {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}
-                  <span className="block text-xs text-muted">{s.wageType === 'daily' ? 'Daily Dihadi' : 'Fixed Monthly'}</span>
-                </td>
-                <td className={td}>{monthAdvance > 0 ? rupee(monthAdvance) : '-'}</td>
-                <td className={`${td} ${s.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
-                  {s.balance > 0 ? `${rupee(s.balance)} due` : `${rupee(-s.balance)} advance`}
-                </td>
-                <td className={`${td} space-x-1.5 whitespace-nowrap`}>
-                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>Pay</button>
-                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>Khata</button>
-                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>Edit</button>
-                  <button className="text-bad underline text-sm" onClick={() => setRemoveStaffTarget(s)}>Remove</button>
-                </td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      </TableScroll>
+                </div>
+                <span className={`shrink-0 px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase ${todayStatus ? ATTENDANCE_STYLE[todayStatus] : 'bg-well text-muted'}`}>
+                  {todayStatus ? ATTENDANCE_LABEL[todayStatus] : 'Not Marked'}
+                </span>
+              </div>
+
+              <div className="text-sm">
+                {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}
+                <span className="text-muted"> • {s.wageType === 'daily' ? 'Daily Dihadi' : 'Fixed Monthly'}</span>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5">
+                {ATTENDANCE_STATUS.map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => markAttendanceOn(today, s.id, s.name, st)}
+                    className={`py-2 rounded-md text-xs font-bold border ${
+                      todayStatus === st ? ATTENDANCE_STYLE[st] + ' border-transparent' : 'bg-bg border-border text-muted'
+                    }`}
+                  >
+                    {ATTENDANCE_LABEL[st][0]}
+                  </button>
+                ))}
+              </div>
+
+              {todayStatus === 'absent' && s.phone && (
+                <a href={`tel:${s.phone}`} className="text-center py-2 rounded-md text-xs font-semibold bg-bad text-white">
+                  Call {s.name} ({s.phone})
+                </a>
+              )}
+
+              <div className="grid grid-cols-2 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Month Peshgi</span>
+                  <span className="font-bold text-sm">{monthAdvance > 0 ? rupee(monthAdvance) : '-'}</span>
+                </div>
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Net Payable</span>
+                  <span className={`font-bold text-sm ${s.balance > 0 ? 'text-bad' : 'text-good'}`}>{s.balance > 0 ? rupee(s.balance) : `${rupee(-s.balance)} adv`}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-1.5 flex-wrap">
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>Pay</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>Khata</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>Edit</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setRemoveStaffTarget(s)}>Remove</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {staff.length > 0 && (
         <div className="bg-surface border border-border rounded-lg p-3.5 mt-4">
@@ -618,6 +694,10 @@ export default function StaffTab() {
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-muted font-semibold">Role</label>
               <input name="role" required defaultValue={editStaff.role} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Phone (optional)</label>
+              <input name="phone" defaultValue={editStaff.phone || ''} className="px-2.5 py-2 border border-border rounded-md text-sm" />
             </div>
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-muted font-semibold">Wage type</label>
