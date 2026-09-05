@@ -17,7 +17,9 @@ export function ReceiptContent({ bill, restaurantName }) {
       <hr className="border-dashed my-2" />
       <div className="flex justify-between"><span>Subtotal</span><span>{rupee(bill.subtotal)}</span></div>
       <div className="flex justify-between"><span>GST ({bill.gstPct}%)</span><span>{rupee(bill.gst)}</span></div>
-      <div className="flex justify-between font-bold"><span>Total</span><span>{rupee(bill.total)}</span></div>
+      <div className="flex justify-between items-center font-bold text-base bg-accent text-white rounded-lg px-2.5 py-2 my-2">
+        <span>Total</span><span>{rupee(bill.total)}</span>
+      </div>
       <div className="flex justify-between"><span>Payment</span><span>{bill.payment}</span></div>
       <hr className="border-dashed my-2" />
       <div className="text-center text-xs text-muted">Thank you, visit again!</div>

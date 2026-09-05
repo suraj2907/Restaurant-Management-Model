@@ -1,5 +1,5 @@
 export function TableScroll({ children }) {
-  return <div className="w-full overflow-x-auto rounded-lg border border-border bg-surface">{children}</div>;
+  return <div className="w-full overflow-x-auto rounded-xl border border-border bg-surface shadow-card">{children}</div>;
 }
 
 export function DataTable({ columns, children }) {
@@ -8,13 +8,13 @@ export function DataTable({ columns, children }) {
       <thead>
         <tr>
           {columns.map((c) => (
-            <th key={c} className="text-left px-3 py-2.5 bg-bg text-muted font-semibold whitespace-nowrap border-b border-border">
+            <th key={c} className="text-left px-3 py-2.5 bg-well text-muted font-semibold text-xs uppercase tracking-wide whitespace-nowrap border-b border-border">
               {c}
             </th>
           ))}
         </tr>
       </thead>
-      <tbody>{children}</tbody>
+      <tbody className="[&>tr:hover]:bg-well/60">{children}</tbody>
     </table>
   );
 }
@@ -29,4 +29,4 @@ export function EmptyRow({ span, children }) {
   );
 }
 
-export const td = 'px-3 py-2.5 whitespace-nowrap border-b border-border';
+export const td = 'px-3 py-2.5 whitespace-nowrap border-b border-border tabular-nums';

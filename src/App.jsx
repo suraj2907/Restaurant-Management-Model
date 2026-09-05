@@ -83,9 +83,9 @@ export default function App() {
   function SidebarNav({ onNavigate }) {
     return (
       <>
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border bg-well/50">
           <input
-            className="w-full text-base font-bold text-accent-dark bg-transparent px-1 py-1 rounded-md focus:outline focus:outline-2 focus:outline-accent focus:bg-bg"
+            className="w-full text-base font-bold text-accent bg-transparent px-1 py-1 rounded-md focus:outline focus:outline-2 focus:outline-accent focus:bg-surface"
             value={name}
             onChange={(e) => setName(e.target.value)}
             spellCheck={false}
@@ -96,8 +96,8 @@ export default function App() {
             <button
               key={t.id}
               onClick={() => onNavigate(t.id)}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-left ${
-                activeTab === t.id ? 'bg-accent text-white' : 'text-muted hover:bg-bg hover:text-ink'
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-colors ${
+                activeTab === t.id ? 'bg-accent text-white shadow-tile' : 'text-muted hover:bg-well hover:text-ink'
               }`}
             >
               <Icon name={t.icon} className="w-4 h-4 shrink-0" />
@@ -105,7 +105,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="p-2.5 border-t border-border flex flex-col gap-1.5">
+        <div className="p-2.5 border-t border-border bg-well/50 flex flex-col gap-1.5">
           {utilityButtons}
         </div>
       </>
