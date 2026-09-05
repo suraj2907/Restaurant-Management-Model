@@ -12,6 +12,8 @@ export default function InventoryTab() {
   const [inv, setInv, invLoaded] = useSupabaseTable('inventory', []);
   const [log, setLog] = useSupabaseTable('stock_log', []);
   const [vendors] = useSupabaseTable('vendors', []);
+  const [vendorPurchases] = useSupabaseTable('vendor_purchases', []);
+  const [vendorPayments] = useSupabaseTable('vendor_payments', []);
   const [modalItem, setModalItem] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [movementType, setMovementType] = useState('in');
@@ -87,14 +89,25 @@ export default function InventoryTab() {
   const recentLog = log.slice().reverse().slice(0, 15);
   const lowStock = inv.filter((i) => i.qty <= i.min);
   const inventoryValue = inv.reduce((s, i) => s + i.qty * (i.cost || 0), 0);
+  const vendorPayable = vendors.reduce((sum, v) => {
+    const purchased = vendorPurchases.filter((p) => p.vendorId === v.id).reduce((s, p) => s + p.amount, 0);
+    const paid = vendorPayments.filter((p) => p.vendorId === v.id).reduce((s, p) => s + p.amount, 0);
+    return sum + Math.max(0, v.openingBalance + purchased - paid);
+  }, 0);
 
   return (
     <section>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3.5">
         <h2 className="text-lg font-bold m-0">Inventory / Stock</h2>
-        <div className="bg-surface border border-border rounded-lg px-3 py-2">
-          <span className="block text-[0.72rem] text-muted uppercase">Inventory Value</span>
-          <span className="font-bold">{rupee(inventoryValue)}</span>
+        <div className="flex gap-2.5 flex-wrap">
+          <div className="bg-surface border border-border rounded-lg px-3 py-2">
+            <span className="block text-[0.72rem] text-muted uppercase">Inventory Value</span>
+            <span className="font-bold">{rupee(inventoryValue)}</span>
+          </div>
+          <div className="bg-surface border border-border rounded-lg px-3 py-2">
+            <span className="block text-[0.72rem] text-muted uppercase">Vendor Khata Due</span>
+            <span className={`font-bold ${vendorPayable > 0 ? 'text-bad' : ''}`}>{rupee(vendorPayable)}</span>
+          </div>
         </div>
       </div>
 

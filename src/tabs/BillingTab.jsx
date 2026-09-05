@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
-import { nextOrderNumber } from '../lib/db.js';
+import { nextOrderNumber, dbInsert } from '../lib/db.js';
 import { uid, rupee, POINTS_PER_RUPEE, todayStr } from '../lib/store.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
+import { VegMark } from '../components/Icons.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 
 export default function BillingTab({ restaurantName }) {
@@ -17,6 +18,7 @@ export default function BillingTab({ restaurantName }) {
   const [customers, setCustomers] = useSupabaseTable('customers', []);
   const [loyaltyLog, setLoyaltyLog] = useSupabaseTable('loyalty_log', []);
   const [reservations] = useSupabaseTable('reservations', []);
+  const [kotTickets, setKotTickets] = useSupabaseTable('kot_tickets', []);
 
   const [activeTable, setActiveTable] = useState(null);
   const [search, setSearch] = useState('');
@@ -82,7 +84,7 @@ export default function BillingTab({ restaurantName }) {
     updateOrder(activeTable, (arr) => {
       const existing = arr.find((o) => o.menuId === menuItem.id);
       if (existing) return arr.map((o) => (o.menuId === menuItem.id ? { ...o, qty: o.qty + 1 } : o));
-      return [...arr, { menuId: menuItem.id, name: menuItem.name, price: menuItem.price, qty: 1 }];
+      return [...arr, { menuId: menuItem.id, name: menuItem.name, price: menuItem.price, qty: 1, veg: menuItem.veg !== false, note: '' }];
     });
   }
 
@@ -92,6 +94,10 @@ export default function BillingTab({ restaurantName }) {
         .map((o) => (o.menuId === menuId ? { ...o, qty: o.qty + delta } : o))
         .filter((o) => o.qty > 0)
     );
+  }
+
+  function setItemNote(menuId, note) {
+    updateOrder(activeTable, (arr) => arr.map((o) => (o.menuId === menuId ? { ...o, note } : o)));
   }
 
   function clearTable() {
@@ -107,7 +113,7 @@ export default function BillingTab({ restaurantName }) {
   // KOT only shows what's new since the last time this table was sent to the
   // kitchen - a table often orders in rounds, and reprinting the full order
   // each round would tell the kitchen to remake dishes already in progress.
-  function sendToKitchen() {
+  async function sendToKitchen() {
     if (!activeTable || items.length === 0) { alert('Order khaali hai.'); return; }
     const alreadySent = kotSent[activeTable] || {};
     const newItems = items
@@ -115,11 +121,23 @@ export default function BillingTab({ restaurantName }) {
       .filter((o) => o.qty > 0);
     if (newItems.length === 0) { alert('Is order mein kitchen ke liye koi naya item nahi hai.'); return; }
 
-    setKot({ table: activeTable, items: newItems, ts: Date.now(), isReorder: Object.keys(alreadySent).length > 0 });
+    const ts = Date.now();
+    setKot({ table: activeTable, items: newItems, ts, isReorder: Object.keys(alreadySent).length > 0 });
     setKotSent((prev) => ({
       ...prev,
       [activeTable]: Object.fromEntries(items.map((o) => [o.menuId, o.qty]))
     }));
+
+    // Also push a ticket to Supabase so the Kitchen Display screen (a
+    // separate device) sees it live - localStorage kotSent above is only
+    // for this device's "what's already fired" bookkeeping.
+    await dbInsert('kot_tickets', {
+      id: uid(),
+      tableName: activeTable,
+      items: newItems.map((o) => ({ name: o.name, qty: o.qty, price: o.price, note: o.note || '', veg: o.veg !== false })),
+      status: 'active',
+      firedAt: ts
+    });
   }
 
   async function completeBill() {
@@ -168,12 +186,13 @@ export default function BillingTab({ restaurantName }) {
       delete next[activeTable];
       return next;
     });
+    setKotTickets(kotTickets.map((k) => (k.tableName === activeTable && k.status !== 'served' ? { ...k, status: 'served' } : k)));
     setCustomerPhone('');
     setServedBy('');
     setReceipt({ bill, mode: 'print' });
   }
 
-  const filteredMenu = menu.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredMenu = menu.filter((m) => m.available !== false && m.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <section>
@@ -221,7 +240,10 @@ export default function BillingTab({ restaurantName }) {
             {filteredMenu.length === 0 && <div className="col-span-full text-muted text-sm text-center py-5">No items found.</div>}
             {filteredMenu.map((item) => (
               <button key={item.id} onClick={() => addItem(item)} className="border border-border rounded-lg p-2.5 text-left bg-bg hover:border-accent">
-                <span className="font-semibold text-sm block">{item.name}</span>
+                <span className="font-semibold text-sm flex items-center gap-1.5">
+                  <VegMark veg={item.veg !== false} />
+                  {item.name}
+                </span>
                 <span className="text-xs text-muted block my-0.5">{item.category}</span>
                 <span className="font-bold text-accent-dark">{rupee(item.price)}</span>
               </button>
@@ -238,14 +260,25 @@ export default function BillingTab({ restaurantName }) {
               </div>
             )}
             {items.map((o) => (
-              <div key={o.menuId} className="flex items-center justify-between gap-2 py-2 border-b border-border">
-                <span className="flex-1 text-sm">{o.name}</span>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => incDec(o.menuId, -1)} className="w-6 h-6 rounded-md border border-border bg-bg">−</button>
-                  <span>{o.qty}</span>
-                  <button onClick={() => incDec(o.menuId, 1)} className="w-6 h-6 rounded-md border border-border bg-bg">+</button>
+              <div key={o.menuId} className="py-2 border-b border-border">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex-1 text-sm flex items-center gap-1.5">
+                    <VegMark veg={o.veg !== false} />
+                    {o.name}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => incDec(o.menuId, -1)} className="w-6 h-6 rounded-md border border-border bg-bg">−</button>
+                    <span>{o.qty}</span>
+                    <button onClick={() => incDec(o.menuId, 1)} className="w-6 h-6 rounded-md border border-border bg-bg">+</button>
+                  </div>
+                  <span className="w-[70px] text-right font-semibold">{rupee(o.price * o.qty)}</span>
                 </div>
-                <span className="w-[70px] text-right font-semibold">{rupee(o.price * o.qty)}</span>
+                <input
+                  value={o.note || ''}
+                  onChange={(e) => setItemNote(o.menuId, e.target.value)}
+                  placeholder="+ kitchen note (e.g. less spicy)"
+                  className="mt-1 w-full text-xs px-2 py-1 border border-border rounded-md bg-well/40 placeholder:text-muted"
+                />
               </div>
             ))}
           </div>
@@ -306,8 +339,11 @@ export default function BillingTab({ restaurantName }) {
             </div>
             <hr className="border-dashed my-2" />
             {kot.items.map((i) => (
-              <div key={i.menuId} className="flex justify-between font-semibold">
-                <span>{i.name}</span><span>x{i.qty}</span>
+              <div key={i.menuId} className="mb-1">
+                <div className="flex justify-between font-semibold">
+                  <span>{i.name}</span><span>x{i.qty}</span>
+                </div>
+                {i.note && <div className="text-xs italic">Note: {i.note}</div>}
               </div>
             ))}
             <hr className="border-dashed my-2" />

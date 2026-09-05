@@ -19,12 +19,16 @@ const StaffTab = lazy(() => import('./tabs/StaffTab.jsx'));
 const VendorsTab = lazy(() => import('./tabs/VendorsTab.jsx'));
 const CustomersTab = lazy(() => import('./tabs/CustomersTab.jsx'));
 const MenuTab = lazy(() => import('./tabs/MenuTab.jsx'));
+const KitchenDisplayTab = lazy(() => import('./tabs/KitchenDisplayTab.jsx'));
+const CashAuditTab = lazy(() => import('./tabs/CashAuditTab.jsx'));
 
 const TABS = [
   { id: 'billing', label: 'Billing', icon: 'billing' },
+  { id: 'kitchen', label: 'Kitchen Display', icon: 'kitchen' },
   { id: 'reservations', label: 'Reservations', icon: 'reservations' },
   { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { id: 'reports', label: 'Reports', icon: 'reports' },
+  { id: 'audit', label: 'Cash Audit', icon: 'audit' },
   { id: 'inventory', label: 'Inventory', icon: 'inventory' },
   { id: 'expenses', label: 'Expenses', icon: 'expenses' },
   { id: 'staff', label: 'Staff', icon: 'staff' },
@@ -176,9 +180,11 @@ export default function App() {
         <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5 pb-14">
           <Suspense fallback={<TabFallback />}>
             {activeTab === 'billing' && <BillingTab restaurantName={name} />}
+            {activeTab === 'kitchen' && <KitchenDisplayTab />}
             {activeTab === 'reservations' && <ReservationsTab />}
             {activeTab === 'dashboard' && <DashboardTab restaurantName={name} />}
             {activeTab === 'reports' && <ReportsTab />}
+            {activeTab === 'audit' && <CashAuditTab />}
             {activeTab === 'inventory' && <InventoryTab />}
             {activeTab === 'expenses' && <ExpensesTab />}
             {activeTab === 'staff' && <StaffTab />}

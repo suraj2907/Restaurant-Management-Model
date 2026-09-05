@@ -11,6 +11,8 @@ const PATHS = {
   vendors: 'M3 7h11v9H3V7zm11 3h4l3 3v3h-7v-6zM6 19a2 2 0 100-4 2 2 0 000 4zm11 0a2 2 0 100-4 2 2 0 000 4z',
   customers: 'M12 12a4 4 0 100-8 4 4 0 000 8zm-7 8c0-3.5 3-6 7-6s7 2.5 7 6',
   menu: 'M9 3l-2 4H3l2 4-2 4h4l2 4 2-4h4l-2-4 2-4h-4l-2-4z',
+  kitchen: 'M8 3v6M12 3v6M16 3v6M4 9h16M6 9v12h12V9M9 21v-5h6v5',
+  audit: 'M4 4h16v16H4V4zm4 5h8M8 12h8M8 15h5M15 15l2 2 3-4',
   hamburger: 'M4 6h16M4 12h16M4 18h16',
   close: 'M6 6l12 12M18 6L6 18'
 };
