@@ -65,6 +65,15 @@ export default function ReportsTab() {
   });
   const staffSales = Object.values(staffMap).sort((a, b) => b.revenue - a.revenue);
 
+  // Table-wise sales
+  const tableMap = {};
+  filtered.forEach((b) => {
+    if (!tableMap[b.table]) tableMap[b.table] = { table: b.table, revenue: 0, bills: 0 };
+    tableMap[b.table].revenue += b.total;
+    tableMap[b.table].bills += 1;
+  });
+  const tableSales = Object.values(tableMap).sort((a, b) => b.revenue - a.revenue);
+
   return (
     <section>
       <div className="flex items-center justify-between flex-wrap gap-2.5 mb-4">
@@ -124,21 +133,40 @@ export default function ReportsTab() {
         </div>
       </div>
 
-      <div className="bg-surface border border-border rounded-lg p-4">
-        <h3 className="font-bold mt-0 mb-2.5">Sales by Staff</h3>
-        <p className="text-muted text-sm -mt-1 mb-2.5">Billing tab mein "Served by" select karne pe yahan track hota hai.</p>
-        <TableScroll>
-          <DataTable columns={['Staff', 'Bills Handled', 'Revenue']}>
-            {staffSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
-            {staffSales.map((s) => (
-              <tr key={s.name}>
-                <td className={td}>{s.name}</td>
-                <td className={td}>{s.bills}</td>
-                <td className={td}>{rupee(s.revenue)}</td>
-              </tr>
-            ))}
-          </DataTable>
-        </TableScroll>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-surface border border-border rounded-lg p-4">
+          <h3 className="font-bold mt-0 mb-2.5">Sales by Table</h3>
+          <p className="text-muted text-sm -mt-1 mb-2.5">Is date range mein kis table/token se kitni sale hui — normal (overall) sales se alag, table-wise breakdown.</p>
+          <TableScroll>
+            <DataTable columns={['Table', 'Bills', 'Revenue']}>
+              {tableSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
+              {tableSales.map((t) => (
+                <tr key={t.table}>
+                  <td className={td}>{t.table}</td>
+                  <td className={td}>{t.bills}</td>
+                  <td className={td}>{rupee(t.revenue)}</td>
+                </tr>
+              ))}
+            </DataTable>
+          </TableScroll>
+        </div>
+
+        <div className="bg-surface border border-border rounded-lg p-4">
+          <h3 className="font-bold mt-0 mb-2.5">Sales by Staff</h3>
+          <p className="text-muted text-sm -mt-1 mb-2.5">Billing tab mein "Served by" select karne pe yahan track hota hai.</p>
+          <TableScroll>
+            <DataTable columns={['Staff', 'Bills Handled', 'Revenue']}>
+              {staffSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
+              {staffSales.map((s) => (
+                <tr key={s.name}>
+                  <td className={td}>{s.name}</td>
+                  <td className={td}>{s.bills}</td>
+                  <td className={td}>{rupee(s.revenue)}</td>
+                </tr>
+              ))}
+            </DataTable>
+          </TableScroll>
+        </div>
       </div>
     </section>
   );

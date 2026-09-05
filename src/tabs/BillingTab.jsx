@@ -7,6 +7,7 @@ import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 export default function BillingTab({ restaurantName }) {
   const [tables, setTables] = useLocalState('rm_tables', []);
   const [openOrders, setOpenOrders] = useLocalState('rm_open_orders', {});
+  const [kotSent, setKotSent] = useLocalState('rm_kot_sent', {}); // { table: { menuId: qtyAlreadySentToKitchen } }
   const [menu] = useLocalState('rm_menu', []);
   const [staff] = useLocalState('rm_staff', []);
   const [bills, setBills] = useLocalState('rm_bills', []);
@@ -59,6 +60,11 @@ export default function BillingTab({ restaurantName }) {
       delete next[name];
       return next;
     });
+    setKotSent((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
     if (activeTable === name) setActiveTable(null);
   }
 
@@ -82,11 +88,29 @@ export default function BillingTab({ restaurantName }) {
   function clearTable() {
     if (!activeTable) return;
     updateOrder(activeTable, () => []);
+    setKotSent((prev) => {
+      const next = { ...prev };
+      delete next[activeTable];
+      return next;
+    });
   }
 
+  // KOT only shows what's new since the last time this table was sent to the
+  // kitchen - a table often orders in rounds, and reprinting the full order
+  // each round would tell the kitchen to remake dishes already in progress.
   function sendToKitchen() {
     if (!activeTable || items.length === 0) { alert('Order khaali hai.'); return; }
-    setKot({ table: activeTable, items, ts: Date.now() });
+    const alreadySent = kotSent[activeTable] || {};
+    const newItems = items
+      .map((o) => ({ ...o, qty: o.qty - (alreadySent[o.menuId] || 0) }))
+      .filter((o) => o.qty > 0);
+    if (newItems.length === 0) { alert('Is order mein kitchen ke liye koi naya item nahi hai.'); return; }
+
+    setKot({ table: activeTable, items: newItems, ts: Date.now(), isReorder: Object.keys(alreadySent).length > 0 });
+    setKotSent((prev) => ({
+      ...prev,
+      [activeTable]: Object.fromEntries(items.map((o) => [o.menuId, o.qty]))
+    }));
   }
 
   function completeBill() {
@@ -129,6 +153,11 @@ export default function BillingTab({ restaurantName }) {
 
     setBills((prev) => [...prev, bill]);
     updateOrder(activeTable, () => []);
+    setKotSent((prev) => {
+      const next = { ...prev };
+      delete next[activeTable];
+      return next;
+    });
     setCustomerPhone('');
     setServedBy('');
     setReceipt({ bill, mode: 'print' });
@@ -253,9 +282,10 @@ export default function BillingTab({ restaurantName }) {
       <Modal open={!!kot} onClose={() => setKot(null)} printArea>
         {kot && (
           <div className="font-mono text-sm">
-            <div className="text-center font-bold text-base mb-1">KITCHEN ORDER TICKET</div>
+            <div className="text-center font-bold text-base mb-1">KITCHEN ORDER TICKET{kot.isReorder ? ' (Add-on)' : ''}</div>
             <div className="text-center text-xs text-muted mb-2.5">
               {new Date(kot.ts).toLocaleString('en-IN')}<br />Table/Token: {kot.table}
+              {kot.isReorder && <><br />Naya add hua order</>}
             </div>
             <hr className="border-dashed my-2" />
             {kot.items.map((i) => (
