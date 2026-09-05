@@ -1,29 +1,31 @@
 import * as XLSX from 'xlsx';
-import { store, todayStr, monthsElapsed } from './store.js';
+import { todayStr, monthsElapsed } from './store.js';
+import { supabase } from './supabase.js';
+import { toCamel } from './useSupabaseTable.js';
 
 function sheetFrom(rows) {
   return XLSX.utils.json_to_sheet(rows.length ? rows : [{}]);
 }
 
-export function downloadExcel() {
-  const bills = store.get('rm_bills', []);
-  const expenses = store.get('rm_expenses', []);
-  const inventory = store.get('rm_inventory', []);
-  const stockLog = store.get('rm_stock_log', []);
-  const vendors = store.get('rm_vendors', []);
-  const vendorPurchases = store.get('rm_vendor_purchases', []);
-  const vendorPayments = store.get('rm_vendor_payments', []);
-  const staff = store.get('rm_staff', []);
-  const salaryPayments = store.get('rm_salary_payments', []);
-  const customers = store.get('rm_customers', []);
-  const menu = store.get('rm_menu', []);
+async function fetchAll(table) {
+  const { data } = await supabase.from(table).select('*');
+  return (data || []).map(toCamel);
+}
+
+export async function downloadExcel() {
+  const [bills, expenses, inventory, stockLog, vendors, vendorPurchases, vendorPayments, staff, salaryPayments, customers, menu] =
+    await Promise.all([
+      fetchAll('bills'), fetchAll('expenses'), fetchAll('inventory'), fetchAll('stock_log'),
+      fetchAll('vendors'), fetchAll('vendor_purchases'), fetchAll('vendor_payments'),
+      fetchAll('staff'), fetchAll('salary_payments'), fetchAll('customers'), fetchAll('menu')
+    ]);
 
   const wb = XLSX.utils.book_new();
 
   XLSX.utils.book_append_sheet(wb, sheetFrom(bills.map((b) => ({
     Date: new Date(b.ts).toLocaleString('en-IN'),
     Table: b.table,
-    Items: b.items.map((i) => `${i.name} x${i.qty}`).join(', '),
+    Items: (b.items || []).map((i) => `${i.name} x${i.qty}`).join(', '),
     Subtotal: b.subtotal,
     'GST %': b.gstPct,
     GST: b.gst,

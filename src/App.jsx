@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { store } from './lib/store.js';
+import { getSetting, setSetting } from './lib/db.js';
 import { downloadBackup, restoreBackup } from './lib/backup.js';
 import { downloadExcel } from './lib/exportExcel.js';
 import Icon from './components/Icons.jsx';
@@ -29,13 +29,18 @@ const TABS = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('billing');
-  const [name, setName] = useState(() => store.get('rm_name', 'My Restaurant'));
+  const [name, setName] = useState('My Restaurant');
   const [navOpen, setNavOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    store.set('rm_name', name);
+    getSetting('rm_name', 'My Restaurant').then(setName);
+  }, []);
+
+  useEffect(() => {
     document.title = `${name} — Manager`;
+    const timeout = setTimeout(() => setSetting('rm_name', name), 600);
+    return () => clearTimeout(timeout);
   }, [name]);
 
   function handleRestoreFile(e) {
@@ -53,7 +58,7 @@ export default function App() {
   const tabContent = {
     billing: <BillingTab restaurantName={name} />,
     reservations: <ReservationsTab />,
-    dashboard: <DashboardTab />,
+    dashboard: <DashboardTab restaurantName={name} />,
     reports: <ReportsTab />,
     inventory: <InventoryTab />,
     expenses: <ExpensesTab />,

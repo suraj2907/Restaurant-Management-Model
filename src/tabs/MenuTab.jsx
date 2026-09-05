@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 export default function MenuTab() {
-  const [menu, setMenu] = useLocalState('rm_menu', []);
+  const [menu, setMenu] = useSupabaseTable('menu', []);
   const [editItem, setEditItem] = useState(null);
 
   function addItem(e) {

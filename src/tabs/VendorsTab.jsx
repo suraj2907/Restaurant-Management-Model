@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 export default function VendorsTab() {
-  const [vendors, setVendors] = useLocalState('rm_vendors', []);
-  const [purchases] = useLocalState('rm_vendor_purchases', []);
-  const [payments, setPayments] = useLocalState('rm_vendor_payments', []);
+  const [vendors, setVendors] = useSupabaseTable('vendors', []);
+  const [purchases] = useSupabaseTable('vendor_purchases', []);
+  const [payments, setPayments] = useSupabaseTable('vendor_payments', []);
   const [payModal, setPayModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
+import { dbInsert } from '../lib/db.js';
 import { uid, todayStr, rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
@@ -7,11 +8,9 @@ import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 const EXPENSE_CATEGORIES = ['Raw Material', 'Gas Cylinder', 'Rent', 'Electricity/Utility', 'Maintenance', 'Other'];
 
 export default function InventoryTab() {
-  const [inv, setInv] = useLocalState('rm_inventory', []);
-  const [log, setLog] = useLocalState('rm_stock_log', []);
-  const [vendors] = useLocalState('rm_vendors', []);
-  const [, setVendorPurchases] = useLocalState('rm_vendor_purchases', []);
-  const [, setExpenses] = useLocalState('rm_expenses', []);
+  const [inv, setInv] = useSupabaseTable('inventory', []);
+  const [log, setLog] = useSupabaseTable('stock_log', []);
+  const [vendors] = useSupabaseTable('vendors', []);
   const [modalItem, setModalItem] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [movementType, setMovementType] = useState('in');
@@ -51,7 +50,7 @@ export default function InventoryTab() {
     setModalItem(item);
   }
 
-  function saveMovement(e) {
+  async function saveMovement(e) {
     e.preventDefault();
     const f = e.target;
     const type = f.type.value;
@@ -70,15 +69,15 @@ export default function InventoryTab() {
 
     if (vendor && amount > 0) {
       const date = todayStr();
-      setVendorPurchases((prev) => [...prev, {
+      await dbInsert('vendor_purchases', {
         id: uid(), vendorId: vendor.id, vendorName: vendor.name, date,
         itemName: modalItem.name, qty, unit: modalItem.unit, amount, note
-      }]);
-      setExpenses((prev) => [...prev, {
+      });
+      await dbInsert('expenses', {
         id: uid(), date, category: f.category.value,
         note: `${modalItem.name} (${qty}${modalItem.unit}) from ${vendor.name}${note ? ' - ' + note : ''}`,
         amount
-      }]);
+      });
     }
 
     setModalItem(null);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
-import { rupee, store } from '../lib/store.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
+import { rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import BarChart from '../components/BarChart.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
@@ -21,12 +21,11 @@ function rangeStart(range) {
   return 0;
 }
 
-export default function DashboardTab() {
-  const [bills] = useLocalState('rm_bills', []);
-  const [expenses] = useLocalState('rm_expenses', []);
+export default function DashboardTab({ restaurantName }) {
+  const [bills] = useSupabaseTable('bills', []);
+  const [expenses] = useSupabaseTable('expenses', []);
   const [range, setRange] = useState('today');
   const [receipt, setReceipt] = useState(null);
-  const restaurantName = store.get('rm_name', 'My Restaurant');
 
   const start = rangeStart(range);
   const filteredBills = bills.filter((b) => b.ts >= start);

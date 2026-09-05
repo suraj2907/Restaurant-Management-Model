@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
-import { uid, rupee, POINTS_PER_RUPEE, nextOrderNumber, todayStr } from '../lib/store.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
+import { nextOrderNumber } from '../lib/db.js';
+import { uid, rupee, POINTS_PER_RUPEE, todayStr } from '../lib/store.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 
@@ -8,12 +10,12 @@ export default function BillingTab({ restaurantName }) {
   const [tables, setTables] = useLocalState('rm_tables', []);
   const [openOrders, setOpenOrders] = useLocalState('rm_open_orders', {});
   const [kotSent, setKotSent] = useLocalState('rm_kot_sent', {}); // { table: { menuId: qtyAlreadySentToKitchen } }
-  const [menu] = useLocalState('rm_menu', []);
-  const [staff] = useLocalState('rm_staff', []);
-  const [bills, setBills] = useLocalState('rm_bills', []);
-  const [customers, setCustomers] = useLocalState('rm_customers', []);
-  const [loyaltyLog, setLoyaltyLog] = useLocalState('rm_loyalty_log', []);
-  const [reservations] = useLocalState('rm_reservations', []);
+  const [menu] = useSupabaseTable('menu', []);
+  const [staff] = useSupabaseTable('staff', []);
+  const [bills, setBills] = useSupabaseTable('bills', []);
+  const [customers, setCustomers] = useSupabaseTable('customers', []);
+  const [loyaltyLog, setLoyaltyLog] = useSupabaseTable('loyalty_log', []);
+  const [reservations] = useSupabaseTable('reservations', []);
 
   const [activeTable, setActiveTable] = useState(null);
   const [search, setSearch] = useState('');
@@ -114,7 +116,7 @@ export default function BillingTab({ restaurantName }) {
     }));
   }
 
-  function completeBill() {
+  async function completeBill() {
     if (!activeTable) { alert('Pehle ek table/token select karein.'); return; }
     if (items.length === 0) { alert('Order khaali hai. Pehle items add karo.'); return; }
 
@@ -123,7 +125,7 @@ export default function BillingTab({ restaurantName }) {
 
     const bill = {
       id: uid(),
-      orderNo: nextOrderNumber(),
+      orderNo: await nextOrderNumber(),
       ts: Date.now(),
       table: activeTable,
       items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),

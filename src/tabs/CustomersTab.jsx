@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 export default function CustomersTab() {
-  const [customers, setCustomers] = useLocalState('rm_customers', []);
-  const [loyaltyLog, setLoyaltyLog] = useLocalState('rm_loyalty_log', []);
-  const [bills] = useLocalState('rm_bills', []);
+  const [customers, setCustomers] = useSupabaseTable('customers', []);
+  const [loyaltyLog, setLoyaltyLog] = useSupabaseTable('loyalty_log', []);
+  const [bills] = useSupabaseTable('bills', []);
   const [adjustModal, setAdjustModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
 

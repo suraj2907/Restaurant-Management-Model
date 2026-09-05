@@ -30,45 +30,14 @@ export function monthsElapsed(joinDate) {
 // 1 loyalty point per ₹100 spent.
 export const POINTS_PER_RUPEE = 100;
 
-// Sequential, human-friendly order/bill numbers (1001, 1002, ...) - separate
-// from each bill's internal id, printed on the receipt for easy reference.
-export function nextOrderNumber() {
-  const next = store.get('rm_order_seq', 1000) + 1;
-  store.set('rm_order_seq', next);
-  return next;
-}
-
+// Only a few things stay device-local now: the list of table names, and
+// whichever order each table currently has "in progress" (not yet billed).
+// Everything else (menu, bills, staff, inventory, etc.) lives in Supabase -
+// see supabase-schema.sql for the seed data on that side.
 export function seedIfEmpty() {
   if (store.get('rm_seeded', false)) return;
-  store.set('rm_menu', [
-    { id: uid(), name: 'Paneer Butter Masala', category: 'Main Course', price: 220, cost: 90 },
-    { id: uid(), name: 'Dal Makhani', category: 'Main Course', price: 180, cost: 60 },
-    { id: uid(), name: 'Veg Biryani', category: 'Rice', price: 190, cost: 75 },
-    { id: uid(), name: 'Butter Naan', category: 'Bread', price: 40, cost: 12 },
-    { id: uid(), name: 'Masala Dosa', category: 'South Indian', price: 110, cost: 35 },
-    { id: uid(), name: 'Cold Coffee', category: 'Beverages', price: 90, cost: 25 },
-    { id: uid(), name: 'Gulab Jamun', category: 'Dessert', price: 70, cost: 20 },
-    { id: uid(), name: 'Veg Spring Roll', category: 'Starters', price: 150, cost: 55 }
-  ]);
-  store.set('rm_inventory', [
-    { id: uid(), name: 'Paneer', unit: 'kg', qty: 8, min: 5 },
-    { id: uid(), name: 'Basmati Rice', unit: 'kg', qty: 25, min: 10 },
-    { id: uid(), name: 'LPG Cylinder', unit: 'pcs', qty: 2, min: 2 },
-    { id: uid(), name: 'Cooking Oil', unit: 'ltr', qty: 6, min: 8 }
-  ]);
-  store.set('rm_expenses', []);
-  store.set('rm_bills', []);
   store.set('rm_tables', ['T1', 'T2', 'T3', 'T4', 'Parcel']);
   store.set('rm_open_orders', {});
-  store.set('rm_stock_log', []);
-  store.set('rm_staff', []);
-  store.set('rm_salary_payments', []);
-  store.set('rm_vendors', []);
-  store.set('rm_vendor_purchases', []);
-  store.set('rm_vendor_payments', []);
-  store.set('rm_customers', []);
-  store.set('rm_reservations', []);
-  store.set('rm_attendance', []);
-  store.set('rm_order_seq', 1000);
+  store.set('rm_kot_sent', {});
   store.set('rm_seeded', true);
 }

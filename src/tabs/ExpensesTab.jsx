@@ -1,11 +1,11 @@
-import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 
 const CATEGORIES = ['Raw Material', 'Gas Cylinder', 'Rent', 'Electricity/Utility', 'Maintenance', 'Other'];
 
 export default function ExpensesTab() {
-  const [expenses, setExpenses] = useLocalState('rm_expenses', []);
+  const [expenses, setExpenses] = useSupabaseTable('expenses', []);
 
   function addExpense(e) {
     e.preventDefault();

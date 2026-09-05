@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
-import { uid, rupee, todayStr, monthsElapsed, store } from '../lib/store.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
+import { dbInsert } from '../lib/db.js';
+import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
@@ -14,9 +15,9 @@ const ATTENDANCE_STYLE = {
 };
 
 export default function StaffTab() {
-  const [staff, setStaff] = useLocalState('rm_staff', []);
-  const [payments, setPayments] = useLocalState('rm_salary_payments', []);
-  const [attendance, setAttendance] = useLocalState('rm_attendance', []);
+  const [staff, setStaff] = useSupabaseTable('staff', []);
+  const [payments, setPayments] = useSupabaseTable('salary_payments', []);
+  const [attendance, setAttendance] = useSupabaseTable('attendance', []);
   const [payModal, setPayModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
   const [attendanceModal, setAttendanceModal] = useState(false);
@@ -37,7 +38,7 @@ export default function StaffTab() {
     setStaff(staff.filter((s) => s.id !== id));
   }
 
-  function savePayment(e) {
+  async function savePayment(e) {
     e.preventDefault();
     const f = e.target;
     const amount = parseFloat(f.amount.value);
@@ -47,9 +48,7 @@ export default function StaffTab() {
 
     setPayments([...payments, { id: uid(), staffId: payModal.id, staffName: payModal.name, date, amount, note }]);
 
-    const exp = store.get('rm_expenses', []);
-    exp.push({ id: uid(), date, category: 'Staff Salary', note: `Salary paid to ${payModal.name}${note ? ' - ' + note : ''}`, amount });
-    store.set('rm_expenses', exp);
+    await dbInsert('expenses', { id: uid(), date, category: 'Staff Salary', note: `Salary paid to ${payModal.name}${note ? ' - ' + note : ''}`, amount });
 
     setPayModal(null);
   }

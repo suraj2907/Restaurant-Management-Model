@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import BarChart from '../components/BarChart.jsx';
@@ -20,8 +20,8 @@ function rangeStart(range) {
 }
 
 export default function ReportsTab() {
-  const [bills] = useLocalState('rm_bills', []);
-  const [menu] = useLocalState('rm_menu', []);
+  const [bills] = useSupabaseTable('bills', []);
+  const [menu] = useSupabaseTable('menu', []);
   const [range, setRange] = useState('week');
 
   const start = rangeStart(range);

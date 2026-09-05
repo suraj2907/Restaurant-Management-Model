@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
+import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 
@@ -11,7 +12,7 @@ const STATUS_STYLE = {
 };
 
 export default function ReservationsTab() {
-  const [reservations, setReservations] = useLocalState('rm_reservations', []);
+  const [reservations, setReservations] = useSupabaseTable('reservations', []);
   const [tables] = useLocalState('rm_tables', []);
   const [filter, setFilter] = useState('upcoming');
 
