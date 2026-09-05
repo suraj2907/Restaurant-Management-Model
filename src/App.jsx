@@ -5,6 +5,7 @@ import { downloadExcel } from './lib/exportExcel.js';
 import BillingTab from './tabs/BillingTab.jsx';
 import DashboardTab from './tabs/DashboardTab.jsx';
 import ReportsTab from './tabs/ReportsTab.jsx';
+import ReservationsTab from './tabs/ReservationsTab.jsx';
 import InventoryTab from './tabs/InventoryTab.jsx';
 import ExpensesTab from './tabs/ExpensesTab.jsx';
 import StaffTab from './tabs/StaffTab.jsx';
@@ -14,6 +15,7 @@ import MenuTab from './tabs/MenuTab.jsx';
 
 const TABS = [
   { id: 'billing', label: 'Billing' },
+  { id: 'reservations', label: 'Reservations' },
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'reports', label: 'Reports' },
   { id: 'inventory', label: 'Inventory' },
@@ -81,6 +83,7 @@ export default function App() {
 
       <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-5 pb-14">
         {activeTab === 'billing' && <BillingTab restaurantName={name} />}
+        {activeTab === 'reservations' && <ReservationsTab />}
         {activeTab === 'dashboard' && <DashboardTab />}
         {activeTab === 'reports' && <ReportsTab />}
         {activeTab === 'inventory' && <InventoryTab />}

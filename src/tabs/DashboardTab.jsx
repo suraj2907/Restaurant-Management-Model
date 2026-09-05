@@ -87,10 +87,11 @@ export default function DashboardTab() {
           <h3 className="font-bold mt-0 mb-1">Recent Bills</h3>
           <p className="text-muted text-sm mb-2">Click a bill to view items, reprint or download.</p>
           <TableScroll>
-            <DataTable columns={['Time', 'Table', 'Items', 'Amount']}>
-              {recentBills.length === 0 && <EmptyRow span={4}>No bills yet.</EmptyRow>}
+            <DataTable columns={['#', 'Time', 'Table', 'Items', 'Amount']}>
+              {recentBills.length === 0 && <EmptyRow span={5}>No bills yet.</EmptyRow>}
               {recentBills.map((b) => (
                 <tr key={b.id} className="cursor-pointer hover:bg-bg" onClick={() => setReceipt({ bill: b, mode: 'reprint' })}>
+                  <td className={td}>{b.orderNo || '-'}</td>
                   <td className={td}>{new Date(b.ts).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}</td>
                   <td className={td}>{b.table}</td>
                   <td className={td}>{b.items.length} item(s)</td>

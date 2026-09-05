@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
-import { uid, rupee, POINTS_PER_RUPEE } from '../lib/store.js';
+import { uid, rupee, POINTS_PER_RUPEE, nextOrderNumber, todayStr } from '../lib/store.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 
@@ -13,6 +13,7 @@ export default function BillingTab({ restaurantName }) {
   const [bills, setBills] = useLocalState('rm_bills', []);
   const [customers, setCustomers] = useLocalState('rm_customers', []);
   const [loyaltyLog, setLoyaltyLog] = useLocalState('rm_loyalty_log', []);
+  const [reservations] = useLocalState('rm_reservations', []);
 
   const [activeTable, setActiveTable] = useState(null);
   const [search, setSearch] = useState('');
@@ -122,6 +123,7 @@ export default function BillingTab({ restaurantName }) {
 
     const bill = {
       id: uid(),
+      orderNo: nextOrderNumber(),
       ts: Date.now(),
       table: activeTable,
       items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
@@ -171,16 +173,23 @@ export default function BillingTab({ restaurantName }) {
         <div className="flex gap-2 flex-wrap">
           {tables.map((t) => {
             const hasOrder = (openOrders[t] || []).length > 0;
+            const todaysReservation = reservations.find((r) => r.table === t && r.date === todayStr() && r.status === 'upcoming');
             return (
               <div
                 key={t}
                 onClick={() => setActiveTable(t)}
+                title={todaysReservation ? `Reserved ${todaysReservation.time} - ${todaysReservation.name}` : undefined}
                 className={`relative px-3.5 py-2 border rounded-lg cursor-pointer font-semibold text-sm flex items-center gap-1.5 ${
                   t === activeTable ? 'bg-accent text-white border-accent' : 'bg-surface border-border'
                 }`}
               >
                 {hasOrder && <span className={`w-1.5 h-1.5 rounded-full ${t === activeTable ? 'bg-white' : 'bg-accent-dark'}`} />}
                 {t}
+                {todaysReservation && (
+                  <span className={`text-[0.65rem] font-bold px-1 rounded ${t === activeTable ? 'bg-white/20' : 'bg-accent/10 text-accent-dark'}`}>
+                    {todaysReservation.time}
+                  </span>
+                )}
                 <span
                   className="ml-0.5 opacity-60 hover:opacity-100 font-bold"
                   onClick={(e) => { e.stopPropagation(); removeTable(t); }}

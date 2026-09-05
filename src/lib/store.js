@@ -30,6 +30,14 @@ export function monthsElapsed(joinDate) {
 // 1 loyalty point per ₹100 spent.
 export const POINTS_PER_RUPEE = 100;
 
+// Sequential, human-friendly order/bill numbers (1001, 1002, ...) - separate
+// from each bill's internal id, printed on the receipt for easy reference.
+export function nextOrderNumber() {
+  const next = store.get('rm_order_seq', 1000) + 1;
+  store.set('rm_order_seq', next);
+  return next;
+}
+
 export function seedIfEmpty() {
   if (store.get('rm_seeded', false)) return;
   store.set('rm_menu', [
@@ -59,5 +67,8 @@ export function seedIfEmpty() {
   store.set('rm_vendor_purchases', []);
   store.set('rm_vendor_payments', []);
   store.set('rm_customers', []);
+  store.set('rm_reservations', []);
+  store.set('rm_attendance', []);
+  store.set('rm_order_seq', 1000);
   store.set('rm_seeded', true);
 }

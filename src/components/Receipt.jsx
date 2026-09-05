@@ -6,6 +6,7 @@ export function ReceiptContent({ bill, restaurantName }) {
     <div className="font-mono text-sm">
       <div className="text-center font-bold text-base mb-1">{restaurantName}</div>
       <div className="text-center text-xs text-muted mb-2.5">
+        {bill.orderNo && <>Order #{bill.orderNo}<br /></>}
         {dt.toLocaleString('en-IN')}<br />Table/Token: {bill.table}
         {bill.staffName && <><br />Served by: {bill.staffName}</>}
       </div>
@@ -28,6 +29,7 @@ export function downloadBill(bill, restaurantName) {
   const dt = new Date(bill.ts);
   const lines = [
     restaurantName,
+    ...(bill.orderNo ? [`Order #${bill.orderNo}`] : []),
     dt.toLocaleString('en-IN'),
     `Table/Token: ${bill.table}`,
     '-'.repeat(32),
