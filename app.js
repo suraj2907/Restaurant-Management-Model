@@ -285,7 +285,10 @@ document.getElementById('completeBillBtn').addEventListener('click', () => {
   renderTableStrip();
 });
 
+let modalBill = null;
+
 function showReceipt(bill) {
+  modalBill = bill;
   const name = store.get('rm_name', 'My Restaurant');
   const dt = new Date(bill.ts);
   const itemsHtml = bill.items.map(i => `
@@ -311,6 +314,42 @@ document.getElementById('closeReceiptBtn').addEventListener('click', () => {
   document.getElementById('receiptModal').classList.add('hidden');
 });
 document.getElementById('printReceiptBtn').addEventListener('click', () => window.print());
+
+function billToText(bill) {
+  const name = store.get('rm_name', 'My Restaurant');
+  const dt = new Date(bill.ts);
+  const lines = [
+    name,
+    dt.toLocaleString('en-IN'),
+    `Table/Token: ${bill.table}`,
+    '-'.repeat(32),
+    ...bill.items.map(i => `${i.name} x${i.qty}`.padEnd(24) + rupee(i.price * i.qty).padStart(8)),
+    '-'.repeat(32),
+    `Subtotal`.padEnd(24) + rupee(bill.subtotal).padStart(8),
+    `GST (${bill.gstPct}%)`.padEnd(24) + rupee(bill.gst).padStart(8),
+    `Total`.padEnd(24) + rupee(bill.total).padStart(8),
+    `Payment: ${bill.payment}`,
+    '-'.repeat(32),
+    'Thank you, visit again!'
+  ];
+  return lines.join('\n');
+}
+
+document.getElementById('downloadReceiptBtn').addEventListener('click', () => {
+  if (!modalBill) return;
+  const text = billToText(modalBill);
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const dt = new Date(modalBill.ts);
+  const fname = `bill-${modalBill.table}-${dt.toISOString().slice(0,10)}-${modalBill.id.slice(-5)}.txt`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
 
 /* ================= INVENTORY + STOCK LOG ================= */
 function renderInventoryTable() {
@@ -622,7 +661,7 @@ function renderDashboard() {
 
   const recentBillsBody = document.querySelector('#recentBillsTable tbody');
   recentBillsBody.innerHTML = bills.slice().sort((a,b)=>b.ts-a.ts).slice(0, 8).map(b => `
-    <tr>
+    <tr class="clickable-row" data-view-bill="${b.id}">
       <td>${new Date(b.ts).toLocaleString('en-IN', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}</td>
       <td>${escapeHtml(b.table)}</td>
       <td>${b.items.length} item(s)</td>
@@ -667,6 +706,13 @@ function renderBarChart(bills, expenses) {
       <span class="day-label">${d.label}</span>
     </div>`).join('');
 }
+
+document.querySelector('#recentBillsTable tbody').addEventListener('click', (e) => {
+  const id = e.target.closest('tr')?.dataset.viewBill;
+  if (!id) return;
+  const bill = store.get('rm_bills', []).find(b => b.id === id);
+  if (bill) showReceipt(bill);
+});
 
 /* ---------- Init ---------- */
 seedIfEmpty();

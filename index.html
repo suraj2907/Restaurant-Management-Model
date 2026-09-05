@@ -106,11 +106,12 @@
     <div class="tables-row">
       <div class="mini-table">
         <h3>Recent Bills</h3>
-        <table id="recentBillsTable"><thead><tr><th>Time</th><th>Table</th><th>Items</th><th>Amount</th></tr></thead><tbody></tbody></table>
+        <p class="hint-text">Click a bill to view items, reprint or download.</p>
+        <div class="table-scroll"><table id="recentBillsTable"><thead><tr><th>Time</th><th>Table</th><th>Items</th><th>Amount</th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="mini-table">
         <h3>Recent Expenses</h3>
-        <table id="recentExpensesTable"><thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Amount</th></tr></thead><tbody></tbody></table>
+        <div class="table-scroll"><table id="recentExpensesTable"><thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Amount</th></tr></thead><tbody></tbody></table></div>
       </div>
     </div>
   </section>
@@ -127,18 +128,18 @@
       <input id="invMin" type="number" step="0.01" placeholder="Min stock alert level" required>
       <button type="submit" class="btn primary">Add</button>
     </form>
-    <table class="data-table" id="inventoryTable">
+    <div class="table-scroll"><table class="data-table" id="inventoryTable">
       <thead><tr><th>Item</th><th>Unit</th><th>Stock</th><th>Min Level</th><th>Status</th><th>Log Movement</th><th></th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
 
     <div class="panel-head" style="margin-top:26px;">
       <h2>Recent Stock Movements</h2>
     </div>
-    <table class="data-table" id="stockLogTable">
+    <div class="table-scroll"><table class="data-table" id="stockLogTable">
       <thead><tr><th>Date</th><th>Item</th><th>Type</th><th>Qty</th><th>Note</th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </section>
 
   <!-- EXPENSES TAB -->
@@ -161,10 +162,10 @@
       <button type="submit" class="btn primary">Add Expense</button>
     </form>
     <p class="hint-text">Staff salary payments are logged from the <strong>Staff</strong> tab and appear here automatically.</p>
-    <table class="data-table" id="expenseTable">
+    <div class="table-scroll"><table class="data-table" id="expenseTable">
       <thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Amount</th><th></th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </section>
 
   <!-- STAFF TAB -->
@@ -178,18 +179,18 @@
       <input id="staffSalary" type="number" step="0.01" placeholder="Monthly salary" required>
       <button type="submit" class="btn primary">Add Staff</button>
     </form>
-    <table class="data-table" id="staffTable">
+    <div class="table-scroll"><table class="data-table" id="staffTable">
       <thead><tr><th>Name</th><th>Role</th><th>Monthly Salary</th><th>Total Due (till date)</th><th>Total Paid</th><th>Balance</th><th>Actions</th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
 
     <div class="panel-head" style="margin-top:26px;">
       <h2>Recent Salary Payments (all staff)</h2>
     </div>
-    <table class="data-table" id="salaryLogTable">
+    <div class="table-scroll"><table class="data-table" id="salaryLogTable">
       <thead><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Note</th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </section>
 
   <!-- MENU SETUP TAB -->
@@ -204,10 +205,10 @@
       <input id="itemCost" type="number" step="0.01" placeholder="Cost price (optional)">
       <button type="submit" class="btn primary">Add Item</button>
     </form>
-    <table class="data-table" id="menuTable">
+    <div class="table-scroll"><table class="data-table" id="menuTable">
       <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Cost</th><th>Margin</th><th></th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
   </section>
 
 </main>
@@ -256,10 +257,10 @@
   <div class="receipt-box wide">
     <h3 id="historyModalTitle">Payment History</h3>
     <div class="history-summary" id="historySummary"></div>
-    <table class="data-table" id="historyTable">
+    <div class="table-scroll"><table class="data-table" id="historyTable">
       <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
       <tbody></tbody>
-    </table>
+    </table></div>
     <div class="modal-actions">
       <button type="button" id="closeHistoryModalBtn" class="btn secondary">Close</button>
     </div>
@@ -270,7 +271,8 @@
   <div class="receipt-box">
     <div id="receiptContent"></div>
     <div class="modal-actions">
-      <button id="printReceiptBtn" class="btn primary">Print</button>
+      <button id="printReceiptBtn" class="btn primary">Reprint</button>
+      <button id="downloadReceiptBtn" class="btn secondary">Download</button>
       <button id="closeReceiptBtn" class="btn secondary">Close</button>
     </div>
   </div>

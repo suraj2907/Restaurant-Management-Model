@@ -11,6 +11,7 @@
   --radius:10px;
 }
 *{box-sizing:border-box;}
+html, body{max-width:100%; overflow-x:hidden;}
 body{
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -156,10 +157,14 @@ main{max-width:1200px; margin:0 auto; padding:20px 24px 60px;}
 /* Data tables (inventory/expense/menu) */
 .inline-form{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; background:var(--surface); border:1px solid var(--border); padding:14px; border-radius:var(--radius);}
 .inline-form input, .inline-form select{padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.9rem;}
-.data-table{width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+.table-scroll{width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:var(--radius);}
+.data-table{width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);}
+.data-table th, .data-table td{white-space:nowrap;}
 .data-table th, .data-table td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); font-size:0.88rem;}
 .data-table th{background:var(--bg); color:var(--text-muted); font-weight:600;}
 .data-table tr:last-child td{border-bottom:none;}
+.clickable-row{cursor:pointer;}
+.clickable-row:hover td{background:var(--bg);}
 .low-stock{color:var(--red); font-weight:700;}
 .ok-stock{color:var(--green); font-weight:600;}
 .link-btn{background:none; border:none; color:var(--red); cursor:pointer; font-size:0.85rem; text-decoration:underline;}
@@ -167,18 +172,32 @@ main{max-width:1200px; margin:0 auto; padding:20px 24px 60px;}
 /* Receipt modal */
 .modal{position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:50;}
 .modal.hidden{display:none;}
-.receipt-box{background:#fff; width:320px; max-height:85vh; overflow-y:auto; border-radius:8px; padding:18px;}
+.receipt-box{background:#fff; width:320px; max-width:92vw; max-height:85vh; overflow-y:auto; overflow-x:hidden; border-radius:8px; padding:18px;}
 .receipt-box.wide{width:460px;}
 .history-summary{display:flex; gap:18px; margin:10px 0 14px; flex-wrap:wrap;}
 .history-summary .h-stat{background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 12px;}
 .history-summary .h-stat .h-label{display:block; font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;}
 .history-summary .h-stat .h-value{font-weight:700; font-size:1rem;}
-.modal-actions{display:flex; gap:10px; margin-top:14px;}
+.modal-actions{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
+.modal-actions .btn{flex:1; min-width:90px;}
 #receiptContent{font-family:'Courier New',monospace; font-size:0.85rem;}
 #receiptContent .r-title{text-align:center; font-weight:700; font-size:1rem; margin-bottom:4px;}
 #receiptContent .r-sub{text-align:center; font-size:0.75rem; color:var(--text-muted); margin-bottom:10px;}
 #receiptContent .r-line{display:flex; justify-content:space-between;}
 #receiptContent hr{border:none; border-top:1px dashed #999; margin:8px 0;}
+
+@media (max-width:480px){
+  main{padding:16px 14px 50px;}
+  .topbar{padding:12px 14px;}
+  .brand-input{font-size:1.1rem; max-width:60vw;}
+  .menu-picker, .order-panel, .mini-table, .chart-section{padding:12px;}
+  #menuSearch{width:100%;}
+  .panel-head{align-items:flex-start;}
+  .inline-form{padding:12px;}
+  .inline-form input, .inline-form select{flex:1 1 100%;}
+  .bar-chart{gap:8px;}
+  .bar{width:10px;}
+}
 
 @media print{
   body *{visibility:hidden;}
