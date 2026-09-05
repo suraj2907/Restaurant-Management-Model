@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { store } from './lib/store.js';
 import { downloadBackup, restoreBackup } from './lib/backup.js';
+import { downloadExcel } from './lib/exportExcel.js';
 import BillingTab from './tabs/BillingTab.jsx';
 import DashboardTab from './tabs/DashboardTab.jsx';
 import ReportsTab from './tabs/ReportsTab.jsx';
@@ -50,7 +51,10 @@ export default function App() {
           spellCheck={false}
         />
         <div className="flex items-center gap-2">
-          <button onClick={downloadBackup} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink" title="Pura data ek file mein download karein">
+          <button onClick={downloadExcel} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink" title="Bills, expenses, inventory, vendors, staff, customers - sab Excel file mein">
+            Export Excel
+          </button>
+          <button onClick={downloadBackup} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink" title="Pura data ek file mein download karein (app mein restore karne ke liye)">
             Backup Data
           </button>
           <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink" title="Pehle se saved backup file se data restore karein">
