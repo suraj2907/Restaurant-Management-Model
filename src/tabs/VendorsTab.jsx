@@ -13,6 +13,7 @@ export default function VendorsTab() {
   const [payModal, setPayModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
   const [removeTarget, setRemoveTarget] = useState(null);
+  const [editVendor, setEditVendor] = useState(null);
 
   function addVendor(e) {
     e.preventDefault();
@@ -33,6 +34,18 @@ export default function VendorsTab() {
   function confirmRemoveVendor() {
     setVendors(vendors.filter((v) => v.id !== removeTarget.id));
     setRemoveTarget(null);
+  }
+
+  function saveEditVendor(e) {
+    e.preventDefault();
+    const f = e.target;
+    setVendors(vendors.map((v) => (v.id === editVendor.id ? {
+      ...v,
+      name: f.name.value.trim(),
+      contact: f.contact.value.trim(),
+      openingBalance: parseFloat(f.openingBalance.value) || 0
+    } : v)));
+    setEditVendor(null);
   }
 
   function savePayment(e) {
@@ -93,6 +106,9 @@ export default function VendorsTab() {
                   </button>
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(v)}>
                     History
+                  </button>
+                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditVendor(v)}>
+                    Edit
                   </button>
                   <button className="text-bad underline text-sm" onClick={() => setRemoveTarget(v)}>
                     Remove
@@ -183,6 +199,29 @@ export default function VendorsTab() {
             </>
           );
         })()}
+      </Modal>
+
+      <Modal open={!!editVendor} onClose={() => setEditVendor(null)} title={editVendor ? `Edit — ${editVendor.name}` : ''}>
+        {editVendor && (
+          <form onSubmit={saveEditVendor}>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Vendor name</label>
+              <input name="name" required defaultValue={editVendor.name} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Contact number</label>
+              <input name="contact" defaultValue={editVendor.contact || ''} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Opening balance</label>
+              <input name="openingBalance" type="number" step="0.01" defaultValue={editVendor.openingBalance || 0} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <ModalActions>
+              <Btn variant="primary" type="submit">Save Changes</Btn>
+              <Btn type="button" onClick={() => setEditVendor(null)}>Cancel</Btn>
+            </ModalActions>
+          </form>
+        )}
       </Modal>
 
       <ConfirmModal

@@ -11,6 +11,7 @@ export default function CustomersTab() {
   const [bills] = useSupabaseTable('bills', []);
   const [adjustModal, setAdjustModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
+  const [editCustomer, setEditCustomer] = useState(null);
 
   function addCustomer(e) {
     e.preventDefault();
@@ -44,6 +45,18 @@ export default function CustomersTab() {
     setAdjustModal(null);
   }
 
+  function saveEditCustomer(e) {
+    e.preventDefault();
+    const f = e.target;
+    const phone = f.phone.value.trim();
+    if (customers.some((c) => c.id !== editCustomer.id && c.phone === phone)) {
+      alert('Is phone number se doosra customer already exist karta hai.');
+      return;
+    }
+    setCustomers(customers.map((c) => (c.id === editCustomer.id ? { ...c, name: f.name.value.trim(), phone } : c)));
+    setEditCustomer(null);
+  }
+
   const sortedCustomers = useMemo(() => customers.slice().sort((a, b) => b.totalSpent - a.totalSpent), [customers]);
 
   return (
@@ -75,6 +88,9 @@ export default function CustomersTab() {
                   </button>
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(c)}>
                     History
+                  </button>
+                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditCustomer(c)}>
+                    Edit
                   </button>
                   <button className="text-bad underline text-sm" onClick={() => setCustomers(customers.filter((x) => x.id !== c.id))}>
                     Remove
@@ -148,6 +164,25 @@ export default function CustomersTab() {
             </>
           );
         })()}
+      </Modal>
+
+      <Modal open={!!editCustomer} onClose={() => setEditCustomer(null)} title={editCustomer ? `Edit — ${editCustomer.name || editCustomer.phone}` : ''}>
+        {editCustomer && (
+          <form onSubmit={saveEditCustomer}>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Customer name</label>
+              <input name="name" defaultValue={editCustomer.name || ''} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Phone number</label>
+              <input name="phone" required defaultValue={editCustomer.phone} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <ModalActions>
+              <Btn variant="primary" type="submit">Save Changes</Btn>
+              <Btn type="button" onClick={() => setEditCustomer(null)}>Cancel</Btn>
+            </ModalActions>
+          </form>
+        )}
       </Modal>
     </section>
   );
