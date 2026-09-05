@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 
 const STATUS_STYLE = {
   upcoming: 'bg-accent/10 text-accent-dark',
@@ -12,7 +13,7 @@ const STATUS_STYLE = {
 };
 
 export default function ReservationsTab() {
-  const [reservations, setReservations] = useSupabaseTable('reservations', []);
+  const [reservations, setReservations, loaded] = useSupabaseTable('reservations', []);
   const [tables] = useLocalState('rm_tables', []);
   const [filter, setFilter] = useState('upcoming');
 
@@ -42,13 +43,15 @@ export default function ReservationsTab() {
     setReservations(reservations.map((r) => (r.id === id ? { ...r, status } : r)));
   }
 
-  const sorted = reservations.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  const today = todayStr();
-  const filtered = sorted.filter((r) => {
-    if (filter === 'today') return r.date === today;
-    if (filter === 'upcoming') return r.status === 'upcoming';
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const sorted = reservations.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    const today = todayStr();
+    return sorted.filter((r) => {
+      if (filter === 'today') return r.date === today;
+      if (filter === 'upcoming') return r.status === 'upcoming';
+      return true;
+    });
+  }, [reservations, filter]);
 
   return (
     <section>
@@ -85,8 +88,9 @@ export default function ReservationsTab() {
 
       <TableScroll>
         <DataTable columns={['Date', 'Time', 'Name', 'Phone', 'Guests', 'Table', 'Status', 'Actions']}>
-          {filtered.length === 0 && <EmptyRow span={8}>Koi reservation nahi hai.</EmptyRow>}
-          {filtered.map((r) => (
+          {!loaded && <SkeletonRows rows={4} cols={8} />}
+          {loaded && filtered.length === 0 && <EmptyRow span={8}>Koi reservation nahi hai.</EmptyRow>}
+          {loaded && filtered.map((r) => (
             <tr key={r.id}>
               <td className={td}>{r.date}</td>
               <td className={td}>{r.time}</td>

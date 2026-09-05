@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 export default function MenuTab() {
-  const [menu, setMenu] = useSupabaseTable('menu', []);
+  const [menu, setMenu, loaded] = useSupabaseTable('menu', []);
   const [editItem, setEditItem] = useState(null);
 
   function addItem(e) {
@@ -54,8 +55,9 @@ export default function MenuTab() {
 
       <TableScroll>
         <DataTable columns={['Item', 'Category', 'Price', 'Cost', 'Margin', '']}>
-          {menu.length === 0 && <EmptyRow span={6}>No menu items yet.</EmptyRow>}
-          {menu.map((item) => {
+          {!loaded && <SkeletonRows rows={5} cols={6} />}
+          {loaded && menu.length === 0 && <EmptyRow span={6}>No menu items yet.</EmptyRow>}
+          {loaded && menu.map((item) => {
             const cost = item.cost || 0;
             const margin = item.price - cost;
             const marginPct = item.price ? (margin / item.price) * 100 : 0;

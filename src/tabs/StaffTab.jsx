@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { dbInsert } from '../lib/db.js';
 import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 const ATTENDANCE_STATUS = ['present', 'absent', 'half-day', 'leave'];
@@ -15,7 +16,7 @@ const ATTENDANCE_STYLE = {
 };
 
 export default function StaffTab() {
-  const [staff, setStaff] = useSupabaseTable('staff', []);
+  const [staff, setStaff, staffLoaded] = useSupabaseTable('staff', []);
   const [payments, setPayments] = useSupabaseTable('salary_payments', []);
   const [attendance, setAttendance] = useSupabaseTable('attendance', []);
   const [payModal, setPayModal] = useState(null);
@@ -61,12 +62,20 @@ export default function StaffTab() {
     });
   }
 
-  function presentDaysThisMonth(staffId) {
+  // Per-staff totals walk the full payments/attendance lists, so compute all
+  // of them together once per data change rather than re-filtering per row
+  // on every render (this tab re-renders on every attendance click).
+  const staffRows = useMemo(() => {
     const month = todayStr().slice(0, 7);
-    return attendance.filter((a) => a.staffId === staffId && a.date.startsWith(month) && (a.status === 'present' || a.status === 'half-day')).length;
-  }
+    return staff.map((s) => {
+      const totalPaid = payments.filter((p) => p.staffId === s.id).reduce((sum, p) => sum + p.amount, 0);
+      const totalDue = s.salary * monthsElapsed(s.joinDate || todayStr());
+      const presentDays = attendance.filter((a) => a.staffId === s.id && a.date.startsWith(month) && (a.status === 'present' || a.status === 'half-day')).length;
+      return { ...s, totalPaid, totalDue, balance: totalDue - totalPaid, presentDays };
+    });
+  }, [staff, payments, attendance]);
 
-  const recentPayments = payments.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15);
+  const recentPayments = useMemo(() => payments.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15), [payments]);
 
   return (
     <section>
@@ -88,21 +97,19 @@ export default function StaffTab() {
 
       <TableScroll>
         <DataTable columns={['Name', 'Role', 'Present (This Month)', 'Monthly Salary', 'Total Due (till date)', 'Total Paid', 'Balance', 'Actions']}>
-          {staff.length === 0 && <EmptyRow span={8}>Koi staff add nahi kiya abhi.</EmptyRow>}
-          {staff.map((s) => {
-            const totalPaid = payments.filter((p) => p.staffId === s.id).reduce((sum, p) => sum + p.amount, 0);
-            const totalDue = s.salary * monthsElapsed(s.joinDate || todayStr());
-            const balance = totalDue - totalPaid;
+          {!staffLoaded && <SkeletonRows rows={3} cols={8} />}
+          {staffLoaded && staffRows.length === 0 && <EmptyRow span={8}>Koi staff add nahi kiya abhi.</EmptyRow>}
+          {staffLoaded && staffRows.map((s) => {
             return (
               <tr key={s.id}>
                 <td className={td}>{s.name}</td>
                 <td className={td}>{s.role}</td>
-                <td className={td}>{presentDaysThisMonth(s.id)} din</td>
+                <td className={td}>{s.presentDays} din</td>
                 <td className={td}>{rupee(s.salary)}</td>
-                <td className={td}>{rupee(totalDue)}</td>
-                <td className={td}>{rupee(totalPaid)}</td>
-                <td className={`${td} ${balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
-                  {balance > 0 ? `${rupee(balance)} pending` : `${rupee(-balance)} advance`}
+                <td className={td}>{rupee(s.totalDue)}</td>
+                <td className={td}>{rupee(s.totalPaid)}</td>
+                <td className={`${td} ${s.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
+                  {s.balance > 0 ? `${rupee(s.balance)} pending` : `${rupee(-s.balance)} advance`}
                 </td>
                 <td className={`${td} space-x-2`}>
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>
@@ -124,7 +131,7 @@ export default function StaffTab() {
       <h2 className="text-lg font-bold mt-6 mb-3.5">Recent Salary Payments (all staff)</h2>
       <TableScroll>
         <DataTable columns={['Date', 'Staff', 'Amount', 'Note']}>
-          {recentPayments.length === 0 && <EmptyRow span={4}>Koi payment log nahi hai abhi.</EmptyRow>}
+          {recentPayments.length === 0 && staffLoaded && <EmptyRow span={4}>Koi payment log nahi hai abhi.</EmptyRow>}
           {recentPayments.map((p) => (
             <tr key={p.id}>
               <td className={td}>{p.date}</td>

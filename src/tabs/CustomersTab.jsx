@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 export default function CustomersTab() {
-  const [customers, setCustomers] = useSupabaseTable('customers', []);
+  const [customers, setCustomers, customersLoaded] = useSupabaseTable('customers', []);
   const [loyaltyLog, setLoyaltyLog] = useSupabaseTable('loyalty_log', []);
   const [bills] = useSupabaseTable('bills', []);
   const [adjustModal, setAdjustModal] = useState(null);
@@ -43,6 +44,8 @@ export default function CustomersTab() {
     setAdjustModal(null);
   }
 
+  const sortedCustomers = useMemo(() => customers.slice().sort((a, b) => b.totalSpent - a.totalSpent), [customers]);
+
   return (
     <section>
       <h2 className="text-lg font-bold mb-3.5">Customers &amp; Loyalty</h2>
@@ -57,11 +60,9 @@ export default function CustomersTab() {
 
       <TableScroll>
         <DataTable columns={['Name', 'Phone', 'Visits', 'Total Spent', 'Points', 'Actions']}>
-          {customers.length === 0 && <EmptyRow span={6}>Koi customer add nahi kiya abhi.</EmptyRow>}
-          {customers
-            .slice()
-            .sort((a, b) => b.totalSpent - a.totalSpent)
-            .map((c) => (
+          {!customersLoaded && <SkeletonRows rows={4} cols={6} />}
+          {customersLoaded && sortedCustomers.length === 0 && <EmptyRow span={6}>Koi customer add nahi kiya abhi.</EmptyRow>}
+          {customersLoaded && sortedCustomers.map((c) => (
               <tr key={c.id}>
                 <td className={td}>{c.name || <span className="text-muted italic">Unnamed</span>}</td>
                 <td className={td}>{c.phone}</td>

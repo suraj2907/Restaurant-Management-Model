@@ -1,5 +1,7 @@
+import { memo } from 'react';
+
 // Small dependency-free grouped bar chart. `series` = [{ name, color, values: number[] }]
-export default function BarChart({ labels, series, height = 140, valueFmt = (v) => v }) {
+function BarChart({ labels, series, height = 140, valueFmt = (v) => v }) {
   const max = Math.max(1, ...series.flatMap((s) => s.values));
   return (
     <div className="flex items-end gap-2 sm:gap-3.5 overflow-x-auto pb-1" style={{ height: height + 40 }}>
@@ -21,3 +23,5 @@ export default function BarChart({ labels, series, height = 140, valueFmt = (v) 
     </div>
   );
 }
+
+export default memo(BarChart);

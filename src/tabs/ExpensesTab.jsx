@@ -1,11 +1,13 @@
+import { useMemo } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 
 const CATEGORIES = ['Raw Material', 'Gas Cylinder', 'Rent', 'Electricity/Utility', 'Maintenance', 'Other'];
 
 export default function ExpensesTab() {
-  const [expenses, setExpenses] = useSupabaseTable('expenses', []);
+  const [expenses, setExpenses, loaded] = useSupabaseTable('expenses', []);
 
   function addExpense(e) {
     e.preventDefault();
@@ -24,7 +26,7 @@ export default function ExpensesTab() {
     f.date.value = todayStr();
   }
 
-  const sorted = expenses.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const sorted = useMemo(() => expenses.slice().sort((a, b) => b.date.localeCompare(a.date)), [expenses]);
 
   return (
     <section>
@@ -46,8 +48,9 @@ export default function ExpensesTab() {
 
       <TableScroll>
         <DataTable columns={['Date', 'Category', 'Note', 'Amount', '']}>
-          {sorted.length === 0 && <EmptyRow span={5}>No expenses recorded yet.</EmptyRow>}
-          {sorted.map((x) => (
+          {!loaded && <SkeletonRows rows={5} cols={5} />}
+          {loaded && sorted.length === 0 && <EmptyRow span={5}>No expenses recorded yet.</EmptyRow>}
+          {loaded && sorted.map((x) => (
             <tr key={x.id}>
               <td className={td}>{x.date}</td>
               <td className={td}>{x.category}</td>

@@ -3,12 +3,13 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { dbInsert } from '../lib/db.js';
 import { uid, todayStr, rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 const EXPENSE_CATEGORIES = ['Raw Material', 'Gas Cylinder', 'Rent', 'Electricity/Utility', 'Maintenance', 'Other'];
 
 export default function InventoryTab() {
-  const [inv, setInv] = useSupabaseTable('inventory', []);
+  const [inv, setInv, invLoaded] = useSupabaseTable('inventory', []);
   const [log, setLog] = useSupabaseTable('stock_log', []);
   const [vendors] = useSupabaseTable('vendors', []);
   const [modalItem, setModalItem] = useState(null);
@@ -117,8 +118,9 @@ export default function InventoryTab() {
 
       <TableScroll>
         <DataTable columns={['Item', 'Unit', 'Stock', 'Min Level', 'Cost/Unit', 'Status', 'Actions']}>
-          {inv.length === 0 && <EmptyRow span={7}>No inventory items yet.</EmptyRow>}
-          {inv.map((item) => {
+          {!invLoaded && <SkeletonRows rows={4} cols={7} />}
+          {invLoaded && inv.length === 0 && <EmptyRow span={7}>No inventory items yet.</EmptyRow>}
+          {invLoaded && inv.map((item) => {
             const low = item.qty <= item.min;
             return (
               <tr key={item.id}>

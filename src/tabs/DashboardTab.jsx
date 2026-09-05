@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonCards, SkeletonRows } from '../components/Skeleton.jsx';
 import BarChart from '../components/BarChart.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
@@ -22,36 +23,53 @@ function rangeStart(range) {
 }
 
 export default function DashboardTab({ restaurantName }) {
-  const [bills] = useSupabaseTable('bills', []);
-  const [expenses] = useSupabaseTable('expenses', []);
+  const [bills, , billsLoaded] = useSupabaseTable('bills', []);
+  const [expenses, , expensesLoaded] = useSupabaseTable('expenses', []);
   const [range, setRange] = useState('today');
   const [receipt, setReceipt] = useState(null);
+  const loaded = billsLoaded && expensesLoaded;
 
-  const start = rangeStart(range);
-  const filteredBills = bills.filter((b) => b.ts >= start);
-  const filteredExp = expenses.filter((x) => new Date(x.date + 'T00:00:00').getTime() >= start);
-  const revenue = filteredBills.reduce((s, b) => s + b.total, 0);
-  const expTotal = filteredExp.reduce((s, x) => s + x.amount, 0);
-  const profit = revenue - expTotal;
+  // These reduce/sort/filter passes are cheap individually but bills/expenses
+  // can grow into the thousands over a year - recomputing all of them (plus
+  // rebuilding the chart's series arrays) on every keystroke-level re-render
+  // elsewhere in the tree is wasted work, so only redo it when the source
+  // data or the selected range actually changes.
+  const stats = useMemo(() => {
+    const start = rangeStart(range);
+    const filteredBills = bills.filter((b) => b.ts >= start);
+    const filteredExp = expenses.filter((x) => new Date(x.date + 'T00:00:00').getTime() >= start);
+    const revenue = filteredBills.reduce((s, b) => s + b.total, 0);
+    const expTotal = filteredExp.reduce((s, x) => s + x.amount, 0);
+    return { revenue, expTotal, profit: revenue - expTotal, billCount: filteredBills.length };
+  }, [bills, expenses, range]);
 
-  const days = [...Array(7)].map((_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
-  const dayLabels = days.map((d) => d.toLocaleDateString('en-IN', { weekday: 'short' }));
-  const dayRev = days.map((d) => {
-    const next = d.getTime() + 86400000;
-    return bills.filter((b) => b.ts >= d.getTime() && b.ts < next).reduce((s, b) => s + b.total, 0);
-  });
-  const dayExp = days.map((d) => {
-    const next = d.getTime() + 86400000;
-    return expenses.filter((x) => { const t = new Date(x.date + 'T00:00:00').getTime(); return t >= d.getTime() && t < next; }).reduce((s, x) => s + x.amount, 0);
-  });
+  const chart = useMemo(() => {
+    const days = [...Array(7)].map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      d.setHours(0, 0, 0, 0);
+      return d;
+    });
+    const dayLabels = days.map((d) => d.toLocaleDateString('en-IN', { weekday: 'short' }));
+    const dayRev = days.map((d) => {
+      const next = d.getTime() + 86400000;
+      return bills.filter((b) => b.ts >= d.getTime() && b.ts < next).reduce((s, b) => s + b.total, 0);
+    });
+    const dayExp = days.map((d) => {
+      const next = d.getTime() + 86400000;
+      return expenses.filter((x) => { const t = new Date(x.date + 'T00:00:00').getTime(); return t >= d.getTime() && t < next; }).reduce((s, x) => s + x.amount, 0);
+    });
+    return {
+      labels: dayLabels,
+      series: [
+        { name: 'Revenue', color: '#3f7d47', values: dayRev },
+        { name: 'Expense', color: '#b23b3b', values: dayExp }
+      ]
+    };
+  }, [bills, expenses]);
 
-  const recentBills = bills.slice().sort((a, b) => b.ts - a.ts).slice(0, 8);
-  const recentExp = expenses.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
+  const recentBills = useMemo(() => bills.slice().sort((a, b) => b.ts - a.ts).slice(0, 8), [bills]);
+  const recentExp = useMemo(() => expenses.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8), [expenses]);
 
   return (
     <section>
@@ -66,19 +84,20 @@ export default function DashboardTab({ restaurantName }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
-        <Card label="Revenue" value={rupee(revenue)} color="text-good" />
-        <Card label="Expenses" value={rupee(expTotal)} color="text-bad" />
-        <Card label="Profit / Loss" value={rupee(profit)} color={profit >= 0 ? 'text-good' : 'text-bad'} />
-        <Card label="Bills Generated" value={filteredBills.length} />
-      </div>
+      {!loaded ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6"><SkeletonCards count={4} /></div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 mb-6">
+          <Card label="Revenue" value={rupee(stats.revenue)} color="text-good" />
+          <Card label="Expenses" value={rupee(stats.expTotal)} color="text-bad" />
+          <Card label="Profit / Loss" value={rupee(stats.profit)} color={stats.profit >= 0 ? 'text-good' : 'text-bad'} />
+          <Card label="Bills Generated" value={stats.billCount} />
+        </div>
+      )}
 
       <div className="bg-surface border border-border rounded-lg p-4 mb-6">
         <h3 className="font-bold mb-1">Revenue vs Expense (last 7 days)</h3>
-        <BarChart labels={dayLabels} valueFmt={rupee} series={[
-          { name: 'Revenue', color: '#3f7d47', values: dayRev },
-          { name: 'Expense', color: '#b23b3b', values: dayExp }
-        ]} />
+        <BarChart labels={chart.labels} valueFmt={rupee} series={chart.series} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -87,8 +106,9 @@ export default function DashboardTab({ restaurantName }) {
           <p className="text-muted text-sm mb-2">Click a bill to view items, reprint or download.</p>
           <TableScroll>
             <DataTable columns={['#', 'Time', 'Table', 'Items', 'Amount']}>
-              {recentBills.length === 0 && <EmptyRow span={5}>No bills yet.</EmptyRow>}
-              {recentBills.map((b) => (
+              {!loaded && <SkeletonRows rows={4} cols={5} />}
+              {loaded && recentBills.length === 0 && <EmptyRow span={5}>No bills yet.</EmptyRow>}
+              {loaded && recentBills.map((b) => (
                 <tr key={b.id} className="cursor-pointer hover:bg-bg" onClick={() => setReceipt({ bill: b, mode: 'reprint' })}>
                   <td className={td}>{b.orderNo || '-'}</td>
                   <td className={td}>{new Date(b.ts).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}</td>
@@ -104,8 +124,9 @@ export default function DashboardTab({ restaurantName }) {
           <h3 className="font-bold mt-0 mb-2">Recent Expenses</h3>
           <TableScroll>
             <DataTable columns={['Date', 'Category', 'Note', 'Amount']}>
-              {recentExp.length === 0 && <EmptyRow span={4}>No expenses yet.</EmptyRow>}
-              {recentExp.map((x) => (
+              {!loaded && <SkeletonRows rows={4} cols={4} />}
+              {loaded && recentExp.length === 0 && <EmptyRow span={4}>No expenses yet.</EmptyRow>}
+              {loaded && recentExp.map((x) => (
                 <tr key={x.id}>
                   <td className={td}>{x.date}</td>
                   <td className={td}>{x.category}</td>
@@ -130,11 +151,11 @@ export default function DashboardTab({ restaurantName }) {
   );
 }
 
-function Card({ label, value, color = 'text-accent-dark' }) {
+const Card = memo(function Card({ label, value, color = 'text-accent-dark' }) {
   return (
     <div className="bg-surface border border-border rounded-lg p-3.5 sm:p-4 flex flex-col gap-1.5">
       <span className="text-[0.75rem] sm:text-xs text-muted uppercase tracking-wide">{label}</span>
       <span className={`text-xl sm:text-2xl font-bold ${color}`}>{value}</span>
     </div>
   );
-}
+});

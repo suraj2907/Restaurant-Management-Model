@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 const PATHS = {
   billing: 'M6 3h9l3 3v15H6V3zm3 6h6M9 12h6M9 15h4',
   reservations: 'M4 5h16v16H4V5zm0 5h16M8 3v4M16 3v4',
@@ -13,7 +15,7 @@ const PATHS = {
   close: 'M6 6l12 12M18 6L6 18'
 };
 
-export default function Icon({ name, className = 'w-4 h-4' }) {
+function IconBase({ name, className = 'w-4 h-4' }) {
   const d = PATHS[name];
   if (!d) return null;
   return (
@@ -22,3 +24,5 @@ export default function Icon({ name, className = 'w-4 h-4' }) {
     </svg>
   );
 }
+
+export default memo(IconBase);

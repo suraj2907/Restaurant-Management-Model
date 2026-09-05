@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 export default function VendorsTab() {
-  const [vendors, setVendors] = useSupabaseTable('vendors', []);
+  const [vendors, setVendors, vendorsLoaded] = useSupabaseTable('vendors', []);
   const [purchases] = useSupabaseTable('vendor_purchases', []);
   const [payments, setPayments] = useSupabaseTable('vendor_payments', []);
   const [payModal, setPayModal] = useState(null);
@@ -51,6 +52,11 @@ export default function VendorsTab() {
     return { purchased, paid, balance };
   }
 
+  const vendorRows = useMemo(
+    () => vendors.map((v) => ({ ...v, ...vendorTotals(v.id, v.openingBalance) })),
+    [vendors, purchases, payments]
+  );
+
   return (
     <section>
       <h2 className="text-lg font-bold mb-3.5">Vendors &amp; Payables</h2>
@@ -66,18 +72,18 @@ export default function VendorsTab() {
 
       <TableScroll>
         <DataTable columns={['Vendor', 'Contact', 'Opening Balance', 'Purchases', 'Paid', 'Balance Due', 'Actions']}>
-          {vendors.length === 0 && <EmptyRow span={7}>Koi vendor add nahi kiya abhi.</EmptyRow>}
-          {vendors.map((v) => {
-            const { purchased, paid, balance } = vendorTotals(v.id, v.openingBalance);
+          {!vendorsLoaded && <SkeletonRows rows={3} cols={7} />}
+          {vendorsLoaded && vendorRows.length === 0 && <EmptyRow span={7}>Koi vendor add nahi kiya abhi.</EmptyRow>}
+          {vendorsLoaded && vendorRows.map((v) => {
             return (
               <tr key={v.id}>
                 <td className={td}>{v.name}</td>
                 <td className={td}>{v.contact || '-'}</td>
                 <td className={td}>{rupee(v.openingBalance)}</td>
-                <td className={td}>{rupee(purchased)}</td>
-                <td className={td}>{rupee(paid)}</td>
-                <td className={`${td} ${balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
-                  {balance > 0 ? `${rupee(balance)} due` : `${rupee(-balance)} advance`}
+                <td className={td}>{rupee(v.purchased)}</td>
+                <td className={td}>{rupee(v.paid)}</td>
+                <td className={`${td} ${v.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
+                  {v.balance > 0 ? `${rupee(v.balance)} due` : `${rupee(-v.balance)} advance`}
                 </td>
                 <td className={`${td} space-x-2`}>
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(v)}>

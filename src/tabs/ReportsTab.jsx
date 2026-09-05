@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { rupee } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+import { SkeletonRows } from '../components/Skeleton.jsx';
 import BarChart from '../components/BarChart.jsx';
 
 const RANGES = [
@@ -20,59 +21,60 @@ function rangeStart(range) {
 }
 
 export default function ReportsTab() {
-  const [bills] = useSupabaseTable('bills', []);
+  const [bills, , billsLoaded] = useSupabaseTable('bills', []);
   const [menu] = useSupabaseTable('menu', []);
   const [range, setRange] = useState('week');
 
-  const start = rangeStart(range);
-  const filtered = bills.filter((b) => b.ts >= start);
+  // Every one of these aggregations walks the full bill list; with a year of
+  // service history that's real work, so it's only redone when the bills,
+  // menu or selected range actually change - not on every unrelated render.
+  const { filtered, topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales } = useMemo(() => {
+    const start = rangeStart(range);
+    const filtered = bills.filter((b) => b.ts >= start);
 
-  // Top selling items
-  const itemMap = {};
-  filtered.forEach((b) => b.items.forEach((i) => {
-    if (!itemMap[i.name]) itemMap[i.name] = { name: i.name, qty: 0, revenue: 0 };
-    itemMap[i.name].qty += i.qty;
-    itemMap[i.name].revenue += i.qty * i.price;
-  }));
-  const topItems = Object.values(itemMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+    const itemMap = {};
+    filtered.forEach((b) => b.items.forEach((i) => {
+      if (!itemMap[i.name]) itemMap[i.name] = { name: i.name, qty: 0, revenue: 0 };
+      itemMap[i.name].qty += i.qty;
+      itemMap[i.name].revenue += i.qty * i.price;
+    }));
+    const topItems = Object.values(itemMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
-  // Category-wise sales
-  const categoryOf = {};
-  menu.forEach((m) => { categoryOf[m.name] = m.category; });
-  const catMap = {};
-  filtered.forEach((b) => b.items.forEach((i) => {
-    const cat = categoryOf[i.name] || 'Uncategorized';
-    if (!catMap[cat]) catMap[cat] = { category: cat, revenue: 0 };
-    catMap[cat].revenue += i.qty * i.price;
-  }));
-  const catSales = Object.values(catMap).sort((a, b) => b.revenue - a.revenue);
+    const categoryOf = {};
+    menu.forEach((m) => { categoryOf[m.name] = m.category; });
+    const catMap = {};
+    filtered.forEach((b) => b.items.forEach((i) => {
+      const cat = categoryOf[i.name] || 'Uncategorized';
+      if (!catMap[cat]) catMap[cat] = { category: cat, revenue: 0 };
+      catMap[cat].revenue += i.qty * i.price;
+    }));
+    const catSales = Object.values(catMap).sort((a, b) => b.revenue - a.revenue);
 
-  // Peak hours
-  const hourRevenue = Array(24).fill(0);
-  const hourCount = Array(24).fill(0);
-  filtered.forEach((b) => { const h = new Date(b.ts).getHours(); hourRevenue[h] += b.total; hourCount[h] += 1; });
-  const activeHours = hourRevenue.map((v, h) => ({ h, v })).filter((x) => x.v > 0);
-  const hourLabels = activeHours.map((x) => `${x.h}:00`);
-  const hourValues = activeHours.map((x) => x.v);
+    const hourRevenue = Array(24).fill(0);
+    filtered.forEach((b) => { const h = new Date(b.ts).getHours(); hourRevenue[h] += b.total; });
+    const activeHours = hourRevenue.map((v, h) => ({ h, v })).filter((x) => x.v > 0);
+    const hourLabels = activeHours.map((x) => `${x.h}:00`);
+    const hourValues = activeHours.map((x) => x.v);
 
-  // Staff sales
-  const staffMap = {};
-  filtered.forEach((b) => {
-    const key = b.staffName || 'Not specified';
-    if (!staffMap[key]) staffMap[key] = { name: key, revenue: 0, bills: 0 };
-    staffMap[key].revenue += b.total;
-    staffMap[key].bills += 1;
-  });
-  const staffSales = Object.values(staffMap).sort((a, b) => b.revenue - a.revenue);
+    const staffMap = {};
+    filtered.forEach((b) => {
+      const key = b.staffName || 'Not specified';
+      if (!staffMap[key]) staffMap[key] = { name: key, revenue: 0, bills: 0 };
+      staffMap[key].revenue += b.total;
+      staffMap[key].bills += 1;
+    });
+    const staffSales = Object.values(staffMap).sort((a, b) => b.revenue - a.revenue);
 
-  // Table-wise sales
-  const tableMap = {};
-  filtered.forEach((b) => {
-    if (!tableMap[b.table]) tableMap[b.table] = { table: b.table, revenue: 0, bills: 0 };
-    tableMap[b.table].revenue += b.total;
-    tableMap[b.table].bills += 1;
-  });
-  const tableSales = Object.values(tableMap).sort((a, b) => b.revenue - a.revenue);
+    const tableMap = {};
+    filtered.forEach((b) => {
+      if (!tableMap[b.table]) tableMap[b.table] = { table: b.table, revenue: 0, bills: 0 };
+      tableMap[b.table].revenue += b.total;
+      tableMap[b.table].bills += 1;
+    });
+    const tableSales = Object.values(tableMap).sort((a, b) => b.revenue - a.revenue);
+
+    return { filtered, topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales };
+  }, [bills, menu, range]);
 
   return (
     <section>
@@ -87,7 +89,7 @@ export default function ReportsTab() {
         </div>
       </div>
 
-      {filtered.length === 0 && (
+      {billsLoaded && filtered.length === 0 && (
         <div className="bg-surface border border-border rounded-lg p-6 text-center text-muted text-sm mb-5">
           Is range mein koi bill nahi hai.
         </div>
@@ -105,7 +107,8 @@ export default function ReportsTab() {
           <h3 className="font-bold mt-0 mb-2.5">Top Selling Items</h3>
           <TableScroll>
             <DataTable columns={['Item', 'Qty Sold', 'Revenue']}>
-              {topItems.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
+              {!billsLoaded && <SkeletonRows rows={3} cols={3} />}
+              {billsLoaded && topItems.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
               {topItems.map((i) => (
                 <tr key={i.name}>
                   <td className={td}>{i.name}</td>
@@ -121,7 +124,8 @@ export default function ReportsTab() {
           <h3 className="font-bold mt-0 mb-2.5">Sales by Category</h3>
           <TableScroll>
             <DataTable columns={['Category', 'Revenue']}>
-              {catSales.length === 0 && <EmptyRow span={2}>Koi data nahi hai.</EmptyRow>}
+              {!billsLoaded && <SkeletonRows rows={3} cols={2} />}
+              {billsLoaded && catSales.length === 0 && <EmptyRow span={2}>Koi data nahi hai.</EmptyRow>}
               {catSales.map((c) => (
                 <tr key={c.category}>
                   <td className={td}>{c.category}</td>
@@ -139,7 +143,8 @@ export default function ReportsTab() {
           <p className="text-muted text-sm -mt-1 mb-2.5">Is date range mein kis table/token se kitni sale hui — normal (overall) sales se alag, table-wise breakdown.</p>
           <TableScroll>
             <DataTable columns={['Table', 'Bills', 'Revenue']}>
-              {tableSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
+              {!billsLoaded && <SkeletonRows rows={3} cols={3} />}
+              {billsLoaded && tableSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
               {tableSales.map((t) => (
                 <tr key={t.table}>
                   <td className={td}>{t.table}</td>
@@ -156,7 +161,8 @@ export default function ReportsTab() {
           <p className="text-muted text-sm -mt-1 mb-2.5">Billing tab mein "Served by" select karne pe yahan track hota hai.</p>
           <TableScroll>
             <DataTable columns={['Staff', 'Bills Handled', 'Revenue']}>
-              {staffSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
+              {!billsLoaded && <SkeletonRows rows={3} cols={3} />}
+              {billsLoaded && staffSales.length === 0 && <EmptyRow span={3}>Koi data nahi hai.</EmptyRow>}
               {staffSales.map((s) => (
                 <tr key={s.name}>
                   <td className={td}>{s.name}</td>
