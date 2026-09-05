@@ -1,9 +1,10 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { getSetting, setSetting } from './lib/db.js';
-import { downloadBackup, restoreBackup } from './lib/backup.js';
+import { downloadBackup, readBackupFile, applyBackup } from './lib/backup.js';
 import { downloadExcel } from './lib/exportExcel.js';
 import Icon from './components/Icons.jsx';
 import { Skeleton } from './components/Skeleton.jsx';
+import ConfirmModal from './components/ConfirmModal.jsx';
 
 // Code-split each tab into its own chunk - only the active tab (plus
 // whichever ones have been visited) is ever downloaded, instead of one
@@ -81,6 +82,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('billing');
   const [name, setName] = useState('My Restaurant');
   const [navOpen, setNavOpen] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -95,12 +97,18 @@ export default function App() {
 
   const handleNameChange = useCallback((e) => setName(e.target.value), []);
 
-  const handleRestoreFile = useCallback((e) => {
+  const handleRestoreFile = useCallback(async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    restoreBackup(file, () => location.reload());
     e.target.value = '';
+    if (!file) return;
+    const parsed = await readBackupFile(file);
+    if (parsed) setPendingRestore(parsed);
   }, []);
+
+  const confirmRestore = useCallback(() => {
+    applyBackup(pendingRestore, () => location.reload());
+    setPendingRestore(null);
+  }, [pendingRestore]);
 
   const selectTab = useCallback((id) => {
     setActiveTab(id);
@@ -180,6 +188,15 @@ export default function App() {
           </Suspense>
         </main>
       </div>
+
+      <ConfirmModal
+        open={!!pendingRestore}
+        title="Restore Backup"
+        message="Ye backup load karega. Current data overwrite ho jaayega - continue karein?"
+        confirmLabel="Yes, Restore"
+        onConfirm={confirmRestore}
+        onCancel={() => setPendingRestore(null)}
+      />
     </div>
   );
 }

@@ -22,6 +22,7 @@ export function Btn({ children, variant = 'secondary', className = '', ...props 
   const styles = {
     primary: 'bg-accent text-white shadow-tile hover:bg-accent-dark active:scale-[0.97]',
     secondary: 'bg-surface border border-border text-ink shadow-card hover:bg-bg active:scale-[0.97]',
+    danger: 'bg-bad text-white shadow-tile hover:opacity-90 active:scale-[0.97]',
     link: 'bg-transparent text-bad underline hover:opacity-80 px-0 py-0 font-normal'
   };
   return (

@@ -5,6 +5,42 @@ import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
+import ConfirmModal from '../components/ConfirmModal.jsx';
+
+// Builds a month-by-month salary ledger for one staff member: each month's
+// due carries forward any unpaid balance from the month before (so "pichle
+// mahine ka bacha hua" shows up added into the new month's payable amount),
+// and total payments are allocated oldest-month-first.
+function monthlyLedger(s, payments) {
+  const paidTotal = payments.filter((p) => p.staffId === s.id).reduce((sum, p) => sum + p.amount, 0);
+  let paidPool = paidTotal;
+
+  const start = new Date((s.joinDate || todayStr()) + 'T00:00:00');
+  const now = new Date();
+  let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const months = [];
+  let carry = 0;
+  while (cursor <= end) {
+    const due = s.salary;
+    const payable = carry + due;
+    const paidNow = Math.min(paidPool, payable);
+    paidPool -= paidNow;
+    const balance = payable - paidNow;
+    months.push({
+      label: cursor.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
+      due,
+      carry,
+      payable,
+      paid: paidNow,
+      balance
+    });
+    carry = balance;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return months.reverse();
+}
 
 const ATTENDANCE_STATUS = ['present', 'absent', 'half-day', 'leave'];
 const ATTENDANCE_LABEL = { present: 'Present', absent: 'Absent', 'half-day': 'Half Day', leave: 'Leave' };
@@ -23,6 +59,10 @@ export default function StaffTab() {
   const [historyModal, setHistoryModal] = useState(null);
   const [attendanceModal, setAttendanceModal] = useState(false);
   const [attendanceDate, setAttendanceDate] = useState(todayStr());
+  const [editStaff, setEditStaff] = useState(null);
+  const [removeStaffTarget, setRemoveStaffTarget] = useState(null);
+  const [editPayment, setEditPayment] = useState(null);
+  const [removePaymentTarget, setRemovePaymentTarget] = useState(null);
 
   function addStaff(e) {
     e.preventDefault();
@@ -34,9 +74,21 @@ export default function StaffTab() {
     f.reset();
   }
 
-  function removeStaff(id) {
-    if (!confirm('Ye staff member remove karein? Payment history save rahegi.')) return;
-    setStaff(staff.filter((s) => s.id !== id));
+  function saveEditStaff(e) {
+    e.preventDefault();
+    const f = e.target;
+    setStaff(staff.map((s) => (s.id === editStaff.id ? {
+      ...s,
+      name: f.name.value.trim(),
+      role: f.role.value.trim(),
+      salary: parseFloat(f.salary.value)
+    } : s)));
+    setEditStaff(null);
+  }
+
+  function confirmRemoveStaff() {
+    setStaff(staff.filter((s) => s.id !== removeStaffTarget.id));
+    setRemoveStaffTarget(null);
   }
 
   async function savePayment(e) {
@@ -52,6 +104,22 @@ export default function StaffTab() {
     await dbInsert('expenses', { id: uid(), date, category: 'Staff Salary', note: `Salary paid to ${payModal.name}${note ? ' - ' + note : ''}`, amount });
 
     setPayModal(null);
+  }
+
+  function saveEditPayment(e) {
+    e.preventDefault();
+    const f = e.target;
+    const amount = parseFloat(f.amount.value);
+    const date = f.date.value;
+    const note = f.note.value.trim();
+    if (!amount || amount <= 0) return;
+    setPayments(payments.map((p) => (p.id === editPayment.id ? { ...p, date, amount, note } : p)));
+    setEditPayment(null);
+  }
+
+  function confirmRemovePayment() {
+    setPayments(payments.filter((p) => p.id !== removePaymentTarget.id));
+    setRemovePaymentTarget(null);
   }
 
   function markAttendance(staffId, staffName, status) {
@@ -70,7 +138,9 @@ export default function StaffTab() {
     return staff.map((s) => {
       const totalPaid = payments.filter((p) => p.staffId === s.id).reduce((sum, p) => sum + p.amount, 0);
       const totalDue = s.salary * monthsElapsed(s.joinDate || todayStr());
-      const presentDays = attendance.filter((a) => a.staffId === s.id && a.date.startsWith(month) && (a.status === 'present' || a.status === 'half-day')).length;
+      const presentDays = attendance
+        .filter((a) => a.staffId === s.id && a.date.startsWith(month))
+        .reduce((sum, a) => sum + (a.status === 'present' ? 1 : a.status === 'half-day' ? 0.5 : 0), 0);
       return { ...s, totalPaid, totalDue, balance: totalDue - totalPaid, presentDays };
     });
   }, [staff, payments, attendance]);
@@ -118,7 +188,10 @@ export default function StaffTab() {
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>
                     History
                   </button>
-                  <button className="text-bad underline text-sm" onClick={() => removeStaff(s.id)}>
+                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>
+                    Edit
+                  </button>
+                  <button className="text-bad underline text-sm" onClick={() => setRemoveStaffTarget(s)}>
                     Remove
                   </button>
                 </td>
@@ -129,15 +202,26 @@ export default function StaffTab() {
       </TableScroll>
 
       <h2 className="text-lg font-bold mt-6 mb-3.5">Recent Salary Payments (all staff)</h2>
+      <p className="text-muted text-xs -mt-2 mb-3.5">
+        Note: payment edit/remove yahan sirf is log ko theek karta hai — usse auto-bani Expenses entry alag se update nahi hoti, wo Expenses tab mein manually theek kar sakte hain.
+      </p>
       <TableScroll>
-        <DataTable columns={['Date', 'Staff', 'Amount', 'Note']}>
-          {recentPayments.length === 0 && staffLoaded && <EmptyRow span={4}>Koi payment log nahi hai abhi.</EmptyRow>}
+        <DataTable columns={['Date', 'Staff', 'Amount', 'Note', 'Actions']}>
+          {recentPayments.length === 0 && staffLoaded && <EmptyRow span={5}>Koi payment log nahi hai abhi.</EmptyRow>}
           {recentPayments.map((p) => (
             <tr key={p.id}>
               <td className={td}>{p.date}</td>
               <td className={td}>{p.staffName}</td>
               <td className={td}>{rupee(p.amount)}</td>
               <td className={td}>{p.note || '-'}</td>
+              <td className={`${td} space-x-2`}>
+                <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditPayment(p)}>
+                  Edit
+                </button>
+                <button className="text-bad underline text-sm" onClick={() => setRemovePaymentTarget(p)}>
+                  Remove
+                </button>
+              </td>
             </tr>
           ))}
         </DataTable>
@@ -186,6 +270,26 @@ export default function StaffTab() {
                   <span className="font-bold">{rupee(Math.abs(balance))}</span>
                 </div>
               </div>
+
+              <h4 className="font-semibold text-sm mb-2">Monthly Salary (pichle mahine ka pending naye mahine mein add hota hai)</h4>
+              <TableScroll>
+                <DataTable columns={['Month', 'Salary Due', 'Carried Forward', 'Total Payable', 'Paid', 'Balance']}>
+                  {monthlyLedger(historyModal, payments).map((m) => (
+                    <tr key={m.label}>
+                      <td className={td}>{m.label}</td>
+                      <td className={td}>{rupee(m.due)}</td>
+                      <td className={td}>{m.carry > 0 ? rupee(m.carry) : '-'}</td>
+                      <td className={td}>{rupee(m.payable)}</td>
+                      <td className={td}>{rupee(m.paid)}</td>
+                      <td className={`${td} ${m.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
+                        {m.balance > 0 ? `${rupee(m.balance)} pending` : 'Paid up'}
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </TableScroll>
+
+              <h4 className="font-semibold text-sm mb-2 mt-4">All Payments</h4>
               <TableScroll>
                 <DataTable columns={['Date', 'Amount', 'Note']}>
                   {list.length === 0 && <EmptyRow span={3}>Abhi tak koi payment nahi hua.</EmptyRow>}
@@ -265,6 +369,69 @@ export default function StaffTab() {
           <Btn variant="primary" onClick={() => setAttendanceModal(false)}>Done</Btn>
         </ModalActions>
       </Modal>
+
+      <Modal open={!!editStaff} onClose={() => setEditStaff(null)} title={editStaff ? `Edit — ${editStaff.name}` : ''}>
+        {editStaff && (
+          <form onSubmit={saveEditStaff}>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Staff name</label>
+              <input name="name" required defaultValue={editStaff.name} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Role</label>
+              <input name="role" required defaultValue={editStaff.role} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Monthly salary</label>
+              <input name="salary" type="number" step="0.01" required defaultValue={editStaff.salary} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <p className="text-muted text-xs -mt-1 mb-3">Salary change future "Total Due" calculation mein turant use hogi (purane mahine dobara calculate nahi hote).</p>
+            <ModalActions>
+              <Btn variant="primary" type="submit">Save Changes</Btn>
+              <Btn type="button" onClick={() => setEditStaff(null)}>Cancel</Btn>
+            </ModalActions>
+          </form>
+        )}
+      </Modal>
+
+      <Modal open={!!editPayment} onClose={() => setEditPayment(null)} title={editPayment ? `Edit Payment — ${editPayment.staffName}` : ''}>
+        {editPayment && (
+          <form onSubmit={saveEditPayment}>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Date</label>
+              <input name="date" type="date" required defaultValue={editPayment.date} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Amount</label>
+              <input name="amount" type="number" step="0.01" required defaultValue={editPayment.amount} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Note</label>
+              <input name="note" defaultValue={editPayment.note || ''} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <ModalActions>
+              <Btn variant="primary" type="submit">Save Changes</Btn>
+              <Btn type="button" onClick={() => setEditPayment(null)}>Cancel</Btn>
+            </ModalActions>
+          </form>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        open={!!removeStaffTarget}
+        title="Remove Staff"
+        message={removeStaffTarget ? `"${removeStaffTarget.name}" ko remove karein? Payment aur attendance history save rahegi.` : ''}
+        onConfirm={confirmRemoveStaff}
+        onCancel={() => setRemoveStaffTarget(null)}
+      />
+
+      <ConfirmModal
+        open={!!removePaymentTarget}
+        title="Remove Payment"
+        message={removePaymentTarget ? `${removePaymentTarget.staffName} ki ${rupee(removePaymentTarget.amount)} (${removePaymentTarget.date}) payment entry remove karein?` : ''}
+        onConfirm={confirmRemovePayment}
+        onCancel={() => setRemovePaymentTarget(null)}
+      />
     </section>
   );
 }

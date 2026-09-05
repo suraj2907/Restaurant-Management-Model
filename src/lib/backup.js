@@ -35,33 +35,42 @@ export async function downloadBackup() {
   URL.revokeObjectURL(url);
 }
 
-export function restoreBackup(file, onDone) {
-  const reader = new FileReader();
-  reader.onload = async () => {
-    let data;
-    try {
-      data = JSON.parse(reader.result);
-    } catch {
-      alert('Ye file valid backup nahi hai.');
-      return;
-    }
-    const dbKeys = DB_TABLES.filter((t) => Array.isArray(data[t]) && data[t].length > 0);
-    const localKeys = Object.keys(data._localStorage || {});
-    if (dbKeys.length === 0 && localKeys.length === 0) {
-      alert('Is file mein koi valid data nahi mila.');
-      return;
-    }
-    if (!confirm(`Ye backup load karega. Current data overwrite ho jaayega - continue karein?`)) return;
+// Reads and validates the backup file, without touching any data yet.
+// Resolves to null (after alerting) if the file is invalid/empty, so the
+// caller can show its own confirm step before anything is overwritten.
+export function readBackupFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try {
+        data = JSON.parse(reader.result);
+      } catch {
+        alert('Ye file valid backup nahi hai.');
+        resolve(null);
+        return;
+      }
+      const dbKeys = DB_TABLES.filter((t) => Array.isArray(data[t]) && data[t].length > 0);
+      const localKeys = Object.keys(data._localStorage || {});
+      if (dbKeys.length === 0 && localKeys.length === 0) {
+        alert('Is file mein koi valid data nahi mila.');
+        resolve(null);
+        return;
+      }
+      resolve({ data, dbKeys, localKeys });
+    };
+    reader.readAsText(file);
+  });
+}
 
-    for (const table of dbKeys) {
-      const rows = data[table].map(toSnake);
-      const idField = table === 'restaurant_tables' ? 'name' : table === 'settings' ? 'key' : 'id';
-      await supabase.from(table).delete().not(idField, 'is', null);
-      await supabase.from(table).insert(rows);
-    }
-    localKeys.forEach((k) => localStorage.setItem(k, JSON.stringify(data._localStorage[k])));
+export async function applyBackup({ data, dbKeys, localKeys }, onDone) {
+  for (const table of dbKeys) {
+    const rows = data[table].map(toSnake);
+    const idField = table === 'restaurant_tables' ? 'name' : table === 'settings' ? 'key' : 'id';
+    await supabase.from(table).delete().not(idField, 'is', null);
+    await supabase.from(table).insert(rows);
+  }
+  localKeys.forEach((k) => localStorage.setItem(k, JSON.stringify(data._localStorage[k])));
 
-    onDone?.();
-  };
-  reader.readAsText(file);
+  onDone?.();
 }

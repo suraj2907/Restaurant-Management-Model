@@ -4,6 +4,7 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { nextOrderNumber } from '../lib/db.js';
 import { uid, rupee, POINTS_PER_RUPEE, todayStr } from '../lib/store.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
+import ConfirmModal from '../components/ConfirmModal.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 
 export default function BillingTab({ restaurantName }) {
@@ -26,6 +27,7 @@ export default function BillingTab({ restaurantName }) {
   const [receipt, setReceipt] = useState(null); // { bill, mode }
   const [kot, setKot] = useState(null); // { table, items, ts }
   const [addTableOpen, setAddTableOpen] = useState(false);
+  const [confirmRemoveTable, setConfirmRemoveTable] = useState(null);
 
   const items = activeTable ? openOrders[activeTable] || [] : [];
   const subtotal = items.reduce((s, o) => s + o.price * o.qty, 0);
@@ -56,7 +58,11 @@ export default function BillingTab({ restaurantName }) {
   }
 
   function removeTable(name) {
-    if ((openOrders[name] || []).length > 0 && !confirm(`Table "${name}" mein pending order hai. Phir bhi remove karein?`)) return;
+    if ((openOrders[name] || []).length > 0) { setConfirmRemoveTable(name); return; }
+    doRemoveTable(name);
+  }
+
+  function doRemoveTable(name) {
     setTables((prev) => prev.filter((t) => t !== name));
     setOpenOrders((prev) => {
       const next = { ...prev };
@@ -325,6 +331,14 @@ export default function BillingTab({ restaurantName }) {
           </ModalActions>
         </form>
       </Modal>
+
+      <ConfirmModal
+        open={!!confirmRemoveTable}
+        title="Remove Table"
+        message={confirmRemoveTable ? `Table "${confirmRemoveTable}" mein pending order hai. Phir bhi remove karein?` : ''}
+        onConfirm={() => { doRemoveTable(confirmRemoveTable); setConfirmRemoveTable(null); }}
+        onCancel={() => setConfirmRemoveTable(null)}
+      />
     </section>
   );
 }

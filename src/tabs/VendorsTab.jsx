@@ -4,6 +4,7 @@ import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
+import ConfirmModal from '../components/ConfirmModal.jsx';
 
 export default function VendorsTab() {
   const [vendors, setVendors, vendorsLoaded] = useSupabaseTable('vendors', []);
@@ -11,6 +12,7 @@ export default function VendorsTab() {
   const [payments, setPayments] = useSupabaseTable('vendor_payments', []);
   const [payModal, setPayModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
+  const [removeTarget, setRemoveTarget] = useState(null);
 
   function addVendor(e) {
     e.preventDefault();
@@ -28,9 +30,9 @@ export default function VendorsTab() {
     f.reset();
   }
 
-  function removeVendor(id) {
-    if (!confirm('Ye vendor remove karein? Purchase/payment history save rahegi.')) return;
-    setVendors(vendors.filter((v) => v.id !== id));
+  function confirmRemoveVendor() {
+    setVendors(vendors.filter((v) => v.id !== removeTarget.id));
+    setRemoveTarget(null);
   }
 
   function savePayment(e) {
@@ -92,7 +94,7 @@ export default function VendorsTab() {
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(v)}>
                     History
                   </button>
-                  <button className="text-bad underline text-sm" onClick={() => removeVendor(v.id)}>
+                  <button className="text-bad underline text-sm" onClick={() => setRemoveTarget(v)}>
                     Remove
                   </button>
                 </td>
@@ -182,6 +184,14 @@ export default function VendorsTab() {
           );
         })()}
       </Modal>
+
+      <ConfirmModal
+        open={!!removeTarget}
+        title="Remove Vendor"
+        message={removeTarget ? `"${removeTarget.name}" ko remove karein? Purchase/payment history save rahegi.` : ''}
+        onConfirm={confirmRemoveVendor}
+        onCancel={() => setRemoveTarget(null)}
+      />
     </section>
   );
 }
