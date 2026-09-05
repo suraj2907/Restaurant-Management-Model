@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { store } from './lib/store.js';
+import { downloadBackup, restoreBackup } from './lib/backup.js';
 import BillingTab from './tabs/BillingTab.jsx';
 import DashboardTab from './tabs/DashboardTab.jsx';
 import ReportsTab from './tabs/ReportsTab.jsx';
@@ -25,11 +26,19 @@ const TABS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('billing');
   const [name, setName] = useState(() => store.get('rm_name', 'My Restaurant'));
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     store.set('rm_name', name);
     document.title = `${name} — Manager`;
   }, [name]);
+
+  function handleRestoreFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    restoreBackup(file, () => location.reload());
+    e.target.value = '';
+  }
 
   return (
     <div>
@@ -40,6 +49,15 @@ export default function App() {
           onChange={(e) => setName(e.target.value)}
           spellCheck={false}
         />
+        <div className="flex items-center gap-2">
+          <button onClick={downloadBackup} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink" title="Pura data ek file mein download karein">
+            Backup Data
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink" title="Pehle se saved backup file se data restore karein">
+            Restore Data
+          </button>
+          <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleRestoreFile} />
+        </div>
         <nav className="flex gap-1.5 flex-wrap">
           {TABS.map((t) => (
             <button
