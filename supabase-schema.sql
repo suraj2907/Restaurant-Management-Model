@@ -271,6 +271,7 @@ create table if not exists daily_tips (
 create table if not exists cash_audits (
   id text primary key,
   date date,
+  opening_cash numeric,
   counted_cash numeric,
   note text,
   created_at bigint

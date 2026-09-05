@@ -3,7 +3,7 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { dbInsert } from '../lib/db.js';
 import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonRows } from '../components/Skeleton.jsx';
+import { SkeletonCards } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
@@ -150,12 +150,16 @@ export default function StaffTab() {
     setRemovePaymentTarget(null);
   }
 
-  function markAttendance(staffId, staffName, status) {
+  function markAttendanceOn(date, staffId, staffName, status) {
     setAttendance((prev) => {
-      const existing = prev.find((a) => a.staffId === staffId && a.date === attendanceDate);
+      const existing = prev.find((a) => a.staffId === staffId && a.date === date);
       if (existing) return prev.map((a) => (a === existing ? { ...a, status } : a));
-      return [...prev, { id: uid(), staffId, staffName, date: attendanceDate, status }];
+      return [...prev, { id: uid(), staffId, staffName, date, status }];
     });
+  }
+
+  function markAttendance(staffId, staffName, status) {
+    markAttendanceOn(attendanceDate, staffId, staffName, status);
   }
 
   // Per-staff totals walk the full payments/attendance lists, so compute all
@@ -178,17 +182,45 @@ export default function StaffTab() {
   const tipsTotal = useMemo(() => tips.reduce((s, t) => s + t.amount, 0), [tips]);
   const recentTips = useMemo(() => tips.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10), [tips]);
 
+  const today = todayStr();
+  const totalWageDue = staffRows.reduce((s, x) => s + Math.max(0, x.balance), 0);
+  const totalAdvance = staffRows.reduce((s, x) => s + Math.max(0, -x.balance), 0);
+  const presentTodayCount = staff.filter((s) => {
+    const st = attendance.find((a) => a.staffId === s.id && a.date === today)?.status;
+    return st === 'present' || st === 'half-day';
+  }).length;
+
   return (
     <section>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3.5">
-        <h2 className="text-lg font-bold m-0">Staff &amp; Salary</h2>
+        <h2 className="text-lg font-bold m-0">Staff, Attendance &amp; Salary Khata</h2>
         <button
           onClick={() => setAttendanceModal(true)}
           className="px-3.5 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent-dark"
         >
-          Mark Attendance
+          Mark Attendance (Other Date)
         </button>
       </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Total Staff</span>
+          <span className="font-extrabold text-xl">{staff.length}</span>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: '#DCFCE7' }}>
+          <span className="block text-[0.68rem] uppercase text-good-text">Present Today</span>
+          <span className="font-extrabold text-xl text-good-text">{presentTodayCount}/{staff.length}</span>
+        </div>
+        <div className="rounded-lg p-3" style={{ background: '#FEE2E2' }}>
+          <span className="block text-[0.68rem] uppercase text-bad">Wage Due (till date)</span>
+          <span className="font-extrabold text-xl text-bad">{rupee(totalWageDue)}</span>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Advance Outstanding</span>
+          <span className="font-extrabold text-xl">{rupee(totalAdvance)}</span>
+        </div>
+      </div>
+
       <form onSubmit={addStaff} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Staff name" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="role" required placeholder="Role (e.g. Waiter, Cook)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
@@ -200,41 +232,63 @@ export default function StaffTab() {
         <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Staff</button>
       </form>
 
-      <TableScroll>
-        <DataTable columns={['Name', 'Role', 'Present (This Month)', 'Wage', 'Total Due (till date)', 'Total Paid', 'Balance', 'Actions']}>
-          {!staffLoaded && <SkeletonRows rows={3} cols={8} />}
-          {staffLoaded && staffRows.length === 0 && <EmptyRow span={8}>Koi staff add nahi kiya abhi.</EmptyRow>}
-          {staffLoaded && staffRows.map((s) => {
-            return (
-              <tr key={s.id}>
-                <td className={td}>{s.name}</td>
-                <td className={td}>{s.role}</td>
-                <td className={td}>{s.presentDays} din</td>
-                <td className={td}>{rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}</td>
-                <td className={td}>{rupee(s.totalDue)}</td>
-                <td className={td}>{rupee(s.totalPaid)}</td>
-                <td className={`${td} ${s.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
-                  {s.balance > 0 ? `${rupee(s.balance)} pending` : `${rupee(-s.balance)} advance`}
-                </td>
-                <td className={`${td} space-x-2`}>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>
-                    Pay Salary
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+        {!staffLoaded && <SkeletonCards count={4} />}
+        {staffLoaded && staffRows.length === 0 && <p className="text-muted text-sm col-span-full">Koi staff add nahi kiya abhi.</p>}
+        {staffLoaded && staffRows.map((s) => {
+          const todayStatus = attendance.find((a) => a.staffId === s.id && a.date === today)?.status;
+          return (
+            <div key={s.id} className="bg-surface border border-border rounded-xl p-3.5 shadow-card flex flex-col gap-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <span className="font-bold text-sm block">{s.name}</span>
+                  <span className="text-xs text-muted">{s.role} • {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}</span>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase ${todayStatus ? ATTENDANCE_STYLE[todayStatus] : 'bg-well text-muted'}`}>
+                  {todayStatus ? ATTENDANCE_LABEL[todayStatus] : 'Not Marked'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">This Month</span>
+                  <span className="font-bold text-sm">{s.presentDays} din</span>
+                </div>
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Total Due</span>
+                  <span className="font-bold text-sm">{rupee(s.totalDue)}</span>
+                </div>
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Balance</span>
+                  <span className={`font-bold text-sm ${s.balance > 0 ? 'text-bad' : 'text-good'}`}>{s.balance > 0 ? rupee(s.balance) : `${rupee(-s.balance)} adv`}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-1.5">
+                {ATTENDANCE_STATUS.map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => markAttendanceOn(today, s.id, s.name, st)}
+                    title={ATTENDANCE_LABEL[st]}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-bold border ${
+                      todayStatus === st ? ATTENDANCE_STYLE[st] + ' border-transparent' : 'bg-bg border-border text-muted'
+                    }`}
+                  >
+                    {ATTENDANCE_LABEL[st][0]}
                   </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>
-                    History
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>
-                    Edit
-                  </button>
-                  <button className="text-bad underline text-sm" onClick={() => setRemoveStaffTarget(s)}>
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      </TableScroll>
+                ))}
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(s)}>Pay Salary</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(s)}>History</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditStaff(s)}>Edit</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setRemoveStaffTarget(s)}>Remove</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       <h2 className="text-lg font-bold mt-6 mb-3.5">Recent Salary Payments (all staff)</h2>
       <p className="text-muted text-xs -mt-2 mb-3.5">

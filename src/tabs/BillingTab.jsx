@@ -5,7 +5,7 @@ import { nextOrderNumber, dbInsert } from '../lib/db.js';
 import { uid, rupee, POINTS_PER_RUPEE, todayStr } from '../lib/store.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
-import { VegMark } from '../components/Icons.jsx';
+import Icon, { VegMark } from '../components/Icons.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 
 export default function BillingTab({ restaurantName }) {
@@ -35,6 +35,8 @@ export default function BillingTab({ restaurantName }) {
   const subtotal = items.reduce((s, o) => s + o.price * o.qty, 0);
   const gst = (subtotal * gstPct) / 100;
   const total = subtotal + gst;
+  const roundedTotal = Math.round(total);
+  const roundOff = roundedTotal - total;
 
   // Always update from the latest state (functional form), not the closure
   // value - a user clicking two different menu items in quick succession
@@ -153,7 +155,7 @@ export default function BillingTab({ restaurantName }) {
       ts: Date.now(),
       table: activeTable,
       items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
-      subtotal, gstPct, gst, total,
+      subtotal, gstPct, gst, total: roundedTotal, roundOff,
       payment,
       staffId: staffMember?.id || null,
       staffName: staffMember?.name || null,
@@ -162,16 +164,16 @@ export default function BillingTab({ restaurantName }) {
 
     if (phone) {
       const existing = customers.find((c) => c.phone === phone);
-      const earned = Math.floor(total / POINTS_PER_RUPEE);
+      const earned = Math.floor(roundedTotal / POINTS_PER_RUPEE);
       const customerId = existing?.id || uid();
       bill.customerId = customerId;
 
       setCustomers((prev) => {
         const found = prev.find((c) => c.id === customerId);
         if (found) {
-          return prev.map((c) => (c.id === customerId ? { ...c, visits: c.visits + 1, totalSpent: c.totalSpent + total, points: c.points + earned } : c));
+          return prev.map((c) => (c.id === customerId ? { ...c, visits: c.visits + 1, totalSpent: c.totalSpent + roundedTotal, points: c.points + earned } : c));
         }
-        return [...prev, { id: customerId, name: '', phone, joinDate: new Date().toISOString().slice(0, 10), visits: 1, totalSpent: total, points: earned }];
+        return [...prev, { id: customerId, name: '', phone, joinDate: new Date().toISOString().slice(0, 10), visits: 1, totalSpent: roundedTotal, points: earned }];
       });
 
       if (earned > 0) {
@@ -196,50 +198,72 @@ export default function BillingTab({ restaurantName }) {
 
   return (
     <section>
-      <div className="flex items-center gap-2.5 flex-wrap mb-4">
-        <div className="flex gap-2 flex-wrap">
-          {tables.map((t) => {
-            const hasOrder = (openOrders[t] || []).length > 0;
-            const todaysReservation = reservations.find((r) => r.table === t && r.date === todayStr() && r.status === 'upcoming');
-            return (
-              <div
-                key={t}
-                onClick={() => setActiveTable(t)}
-                title={todaysReservation ? `Reserved ${todaysReservation.time} - ${todaysReservation.name}` : undefined}
-                className={`relative px-3.5 py-2 border rounded-lg cursor-pointer font-semibold text-sm flex items-center gap-1.5 ${
-                  t === activeTable ? 'bg-accent text-white border-accent' : 'bg-surface border-border'
-                }`}
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <h2 className="text-lg font-bold m-0">Floor / Table Status</h2>
+        <button onClick={() => setAddTableOpen(true)} className="px-3.5 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:bg-accent-dark">+ Table</button>
+      </div>
+
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5 mb-5">
+        {tables.map((t) => {
+          const tableItems = openOrders[t] || [];
+          const hasOrder = tableItems.length > 0;
+          const tableTotal = tableItems.reduce((s, o) => s + o.price * o.qty, 0);
+          const kotFired = Object.keys(kotSent[t] || {}).length > 0;
+          const todaysReservation = reservations.find((r) => r.table === t && r.date === todayStr() && r.status === 'upcoming');
+          const isActive = t === activeTable;
+          return (
+            <div
+              key={t}
+              onClick={() => setActiveTable(t)}
+              className={`relative rounded-xl border-2 p-3 cursor-pointer transition-all flex flex-col gap-1.5 min-h-[92px] ${
+                isActive
+                  ? 'bg-accent border-accent text-white shadow-tile'
+                  : hasOrder
+                  ? 'bg-pending-container border-pending/40 text-ink'
+                  : 'bg-good-container border-good/30 text-ink'
+              }`}
+              style={
+                !isActive
+                  ? hasOrder
+                    ? { background: '#FEF3C7' }
+                    : { background: '#DCFCE7' }
+                  : undefined
+              }
+            >
+              <span
+                className={`absolute top-1.5 right-2 text-xs font-bold opacity-60 hover:opacity-100 ${isActive ? 'text-white' : 'text-ink'}`}
+                onClick={(e) => { e.stopPropagation(); removeTable(t); }}
               >
-                {hasOrder && <span className={`w-1.5 h-1.5 rounded-full ${t === activeTable ? 'bg-white' : 'bg-accent-dark'}`} />}
-                {t}
-                {todaysReservation && (
-                  <span className={`text-[0.65rem] font-bold px-1 rounded ${t === activeTable ? 'bg-white/20' : 'bg-accent/10 text-accent-dark'}`}>
-                    {todaysReservation.time}
-                  </span>
-                )}
-                <span
-                  className="ml-0.5 opacity-60 hover:opacity-100 font-bold"
-                  onClick={(e) => { e.stopPropagation(); removeTable(t); }}
-                >
-                  ×
+                ×
+              </span>
+              <span className="font-headline-sm text-lg font-extrabold leading-none">{t}</span>
+              <span className={`inline-flex w-fit items-center px-1.5 py-0.5 rounded-full text-[0.62rem] font-bold uppercase ${
+                isActive ? 'bg-white/25 text-white' : hasOrder ? 'text-pending-text' : 'text-good-text'
+              }`}>
+                {hasOrder ? (kotFired ? 'KOT Sent' : 'Running') : 'Vacant'}
+              </span>
+              {hasOrder && <span className="font-bold text-sm mt-auto">{rupee(tableTotal)}</span>}
+              {todaysReservation && (
+                <span className={`text-[0.65rem] font-bold ${isActive ? 'text-white/90' : 'text-accent-dark'}`}>
+                  Reserved {todaysReservation.time}
                 </span>
-              </div>
-            );
-          })}
-        </div>
-        <button onClick={() => setAddTableOpen(true)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-bg border border-border">+ Table</button>
+              )}
+            </div>
+          );
+        })}
+        {tables.length === 0 && <p className="text-muted text-sm col-span-full">Koi table nahi hai. "+ Table" se add karein.</p>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-5">
         <div className="bg-surface border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5">
             <h2 className="text-lg font-bold m-0">Menu</h2>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item..." className="px-2.5 py-1.5 border border-border rounded-md text-sm w-full sm:w-auto" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             {filteredMenu.length === 0 && <div className="col-span-full text-muted text-sm text-center py-5">No items found.</div>}
             {filteredMenu.map((item) => (
-              <button key={item.id} onClick={() => addItem(item)} className="border border-border rounded-lg p-2.5 text-left bg-bg hover:border-accent">
+              <button key={item.id} onClick={() => addItem(item)} className="border border-border rounded-lg p-2.5 text-left bg-bg hover:border-accent hover:shadow-tile active:translate-y-0.5 transition-all">
                 <span className="font-semibold text-sm flex items-center gap-1.5">
                   <VegMark veg={item.veg !== false} />
                   {item.name}
@@ -251,71 +275,130 @@ export default function BillingTab({ restaurantName }) {
           </div>
         </div>
 
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <h2 className="text-lg font-bold m-0">{activeTable ? `Current Order — ${activeTable}` : 'Select a table to start order'}</h2>
-          <div className="min-h-[100px] max-h-[300px] overflow-y-auto mt-2.5">
+        <div className="bg-surface border border-border rounded-lg flex flex-col overflow-hidden">
+          <div className="px-4 pt-4">
+            <h2 className="text-lg font-bold m-0">{activeTable ? `Current Order — ${activeTable}` : 'Select a table to start order'}</h2>
+          </div>
+          <div className="min-h-[100px] max-h-[340px] overflow-y-auto mt-2.5 px-4">
             {items.length === 0 && (
               <div className="text-muted text-sm text-center py-5">
                 {activeTable ? 'No items added yet. Click menu items to add.' : 'Table select karke items add karein.'}
               </div>
             )}
-            {items.map((o) => (
-              <div key={o.menuId} className="py-2 border-b border-border">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex-1 text-sm flex items-center gap-1.5">
-                    <VegMark veg={o.veg !== false} />
-                    {o.name}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => incDec(o.menuId, -1)} className="w-6 h-6 rounded-md border border-border bg-bg">−</button>
-                    <span>{o.qty}</span>
-                    <button onClick={() => incDec(o.menuId, 1)} className="w-6 h-6 rounded-md border border-border bg-bg">+</button>
-                  </div>
-                  <span className="w-[70px] text-right font-semibold">{rupee(o.price * o.qty)}</span>
-                </div>
-                <input
-                  value={o.note || ''}
-                  onChange={(e) => setItemNote(o.menuId, e.target.value)}
-                  placeholder="+ kitchen note (e.g. less spicy)"
-                  className="mt-1 w-full text-xs px-2 py-1 border border-border rounded-md bg-well/40 placeholder:text-muted"
-                />
-              </div>
-            ))}
+
+            {(() => {
+              const alreadySent = kotSent[activeTable] || {};
+              const sentRows = items
+                .map((o) => ({ ...o, sentQty: Math.min(o.qty, alreadySent[o.menuId] || 0) }))
+                .filter((o) => o.sentQty > 0);
+              const newRows = items
+                .map((o) => ({ ...o, newQty: o.qty - Math.min(o.qty, alreadySent[o.menuId] || 0) }))
+                .filter((o) => o.newQty > 0);
+              return (
+                <>
+                  {sentRows.length > 0 && (
+                    <div className="mb-3">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-good uppercase mb-1.5">
+                        <Icon name="kitchen" className="w-3.5 h-3.5" /> Sent to Kitchen
+                      </div>
+                      {sentRows.map((o) => (
+                        <div key={o.menuId} className="flex items-center justify-between gap-2 py-1.5 opacity-80">
+                          <span className="flex-1 text-sm flex items-center gap-1.5">
+                            <VegMark veg={o.veg !== false} />
+                            {o.name}
+                            {o.note && <span className="text-xs italic text-muted">({o.note})</span>}
+                          </span>
+                          <span className="text-xs font-semibold text-muted">x{o.sentQty} • Cooking</span>
+                          <span className="w-[70px] text-right font-semibold text-sm">{rupee(o.price * o.sentQty)}</span>
+                          <span className="text-muted text-xs">🔒</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {newRows.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-secondary-dark uppercase mb-1.5">
+                        New Punch • Pending Kitchen Fire
+                      </div>
+                      {newRows.map((o) => (
+                        <div key={o.menuId} className="py-2 border-b border-border">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex-1 text-sm flex items-center gap-1.5">
+                              <VegMark veg={o.veg !== false} />
+                              {o.name}
+                              <span className="px-1.5 py-0.5 rounded bg-secondary/15 text-secondary-dark text-[0.6rem] font-bold uppercase">New</span>
+                            </span>
+                            <div className="flex items-center gap-1.5 bg-well rounded-lg p-0.5">
+                              <button onClick={() => incDec(o.menuId, -1)} className="w-7 h-7 rounded-md bg-surface shadow-card font-bold flex items-center justify-center active:scale-95">−</button>
+                              <span className="w-5 text-center font-semibold">{o.newQty}</span>
+                              <button onClick={() => incDec(o.menuId, 1)} className="w-7 h-7 rounded-md bg-surface shadow-card font-bold flex items-center justify-center active:scale-95">+</button>
+                            </div>
+                            <span className="w-[70px] text-right font-semibold">{rupee(o.price * o.newQty)}</span>
+                          </div>
+                          <input
+                            value={o.note || ''}
+                            onChange={(e) => setItemNote(o.menuId, e.target.value)}
+                            placeholder="+ kitchen note (e.g. less spicy)"
+                            className="mt-1 w-full text-xs px-2 py-1 border border-border rounded-md bg-well/40 placeholder:text-muted"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
-          <div className="mt-3.5 border-t border-dashed border-border pt-2.5 text-sm">
-            <div className="flex justify-between py-1"><span>Subtotal</span><span>{rupee(subtotal)}</span></div>
+          <div className="bg-well/60 mt-3.5 px-4 pt-3 pb-1 text-sm border-t border-border">
+            <div className="flex justify-between py-1"><span>Item Subtotal</span><span>{rupee(subtotal)}</span></div>
             <div className="flex justify-between py-1 items-center">
-              <span>GST (<input type="number" value={gstPct} onChange={(e) => setGstPct(parseFloat(e.target.value) || 0)} className="w-12 border border-border rounded px-1" />%)</span>
+              <span className="flex items-center gap-1">
+                CGST + SGST (<input type="number" value={gstPct} onChange={(e) => setGstPct(parseFloat(e.target.value) || 0)} className="w-10 border border-border rounded px-1 text-center" />% total)
+              </span>
               <span>{rupee(gst)}</span>
             </div>
-            <div className="flex justify-between py-2 border-t border-border mt-1.5 font-bold text-base"><span>Total</span><span>{rupee(total)}</span></div>
+            <div className="flex justify-between py-1 text-xs text-muted"><span>Round off</span><span>{rupee(roundOff)}</span></div>
+            <div className="flex justify-between py-2.5 border-t border-border mt-1.5 font-extrabold text-xl text-accent"><span>Net Payable</span><span>{rupee(roundedTotal)}</span></div>
           </div>
 
-          <div className="flex gap-2.5 mt-3 flex-wrap items-center text-sm">
-            <label className="text-muted">Payment:</label>
-            <select value={payment} onChange={(e) => setPayment(e.target.value)} className="px-2 py-1.5 border border-border rounded-md">
-              <option>Cash</option><option>UPI</option><option>Card</option>
-            </select>
-          </div>
-          {staff.length > 0 && (
+          <div className="px-4">
+            {staff.length > 0 && (
+              <div className="flex gap-2.5 mt-2 flex-wrap items-center text-sm">
+                <label className="text-muted">Served by:</label>
+                <select value={servedBy} onChange={(e) => setServedBy(e.target.value)} className="px-2 py-1.5 border border-border rounded-md">
+                  <option value="">Not specified</option>
+                  {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
             <div className="flex gap-2.5 mt-2 flex-wrap items-center text-sm">
-              <label className="text-muted">Served by:</label>
-              <select value={servedBy} onChange={(e) => setServedBy(e.target.value)} className="px-2 py-1.5 border border-border rounded-md">
-                <option value="">Not specified</option>
-                {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <label className="text-muted">Customer phone:</label>
+              <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional - for loyalty points" className="px-2 py-1.5 border border-border rounded-md flex-1 min-w-[140px]" />
             </div>
-          )}
-          <div className="flex gap-2.5 mt-2 flex-wrap items-center text-sm">
-            <label className="text-muted">Customer phone:</label>
-            <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional - for loyalty points" className="px-2 py-1.5 border border-border rounded-md flex-1 min-w-[140px]" />
+
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              {['Cash', 'UPI', 'Card'].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setPayment(mode)}
+                  className={`py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                    payment === mode ? 'bg-good text-white border-good' : 'bg-bg border-border text-muted'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex gap-2.5 mt-3.5 flex-wrap">
-            <Btn onClick={clearTable}>Clear Table</Btn>
-            <Btn onClick={sendToKitchen}>Send to Kitchen (KOT)</Btn>
-            <Btn variant="primary" onClick={completeBill}>Complete Bill &amp; Print</Btn>
+          <div className="grid grid-cols-2 gap-2 p-4 mt-3 bg-ink sticky bottom-0">
+            <button onClick={clearTable} className="py-2.5 rounded-lg text-sm font-semibold bg-white/10 text-white hover:bg-white/20">Clear Table</button>
+            <button onClick={sendToKitchen} className="py-2.5 rounded-lg text-sm font-semibold bg-secondary text-white hover:bg-secondary-dark">Fire KOT</button>
+            <button onClick={completeBill} className="col-span-2 py-3 rounded-lg text-base font-bold bg-good text-white hover:opacity-90 shadow-tile active:translate-y-0.5">
+              Settle &amp; Close Table — {rupee(roundedTotal)}
+            </button>
           </div>
         </div>
       </div>

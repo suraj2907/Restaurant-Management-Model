@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee } from '../lib/store.js';
-import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonRows } from '../components/Skeleton.jsx';
+import { SkeletonCards } from '../components/Skeleton.jsx';
 import { VegMark } from '../components/Icons.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
@@ -49,21 +48,44 @@ export default function MenuTab() {
     setMenu(menu.map((m) => (m.id === item.id ? { ...m, available: !(m.available !== false) } : m)));
   }
 
-  const lowMarginCount = menu.filter((m) => {
-    const pct = m.price ? ((m.price - (m.cost || 0)) / m.price) * 100 : 100;
-    return m.cost && pct < LOW_MARGIN_PCT;
-  }).length;
+  const rows = useMemo(() => menu.map((item) => {
+    const cost = item.cost || 0;
+    const margin = item.price - cost;
+    const marginPct = item.price ? (margin / item.price) * 100 : 0;
+    const lowMargin = cost > 0 && marginPct < LOW_MARGIN_PCT;
+    const available = item.available !== false;
+    return { ...item, cost, margin, marginPct, lowMargin, available };
+  }), [menu]);
+
+  const lowMarginCount = rows.filter((m) => m.lowMargin).length;
+  const outOfStockCount = rows.filter((m) => !m.available).length;
+  const avgMarginPct = rows.length ? rows.reduce((s, m) => s + m.marginPct, 0) / rows.length : 0;
 
   return (
     <section>
       <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
         <h2 className="text-lg font-bold m-0">Menu Setup</h2>
-        {lowMarginCount > 0 && (
-          <span className="px-2.5 py-1 rounded-full bg-bad/10 text-bad text-xs font-semibold">
-            {lowMarginCount} item{lowMarginCount > 1 ? 's' : ''} below {LOW_MARGIN_PCT}% margin
-          </span>
-        )}
       </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Menu Items</span>
+          <span className="font-extrabold text-xl">{rows.length}</span>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Avg Margin</span>
+          <span className="font-extrabold text-xl">{avgMarginPct.toFixed(0)}%</span>
+        </div>
+        <div className={`rounded-lg p-3 border ${lowMarginCount > 0 ? 'bg-bad/10 border-bad' : 'bg-surface border-border'}`}>
+          <span className={`block text-[0.68rem] uppercase ${lowMarginCount > 0 ? 'text-bad' : 'text-muted'}`}>Low Margin (&lt;{LOW_MARGIN_PCT}%)</span>
+          <span className={`font-extrabold text-xl ${lowMarginCount > 0 ? 'text-bad' : ''}`}>{lowMarginCount}</span>
+        </div>
+        <div className={`rounded-lg p-3 border ${outOfStockCount > 0 ? 'bg-pending-container border-pending/40' : 'bg-surface border-border'}`} style={outOfStockCount > 0 ? { background: '#FEF3C7' } : undefined}>
+          <span className="block text-[0.68rem] uppercase text-muted">86'd / Out of Stock</span>
+          <span className="font-extrabold text-xl">{outOfStockCount}</span>
+        </div>
+      </div>
+
       <form onSubmit={addItem} className="flex gap-2.5 flex-wrap items-center mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Item name" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="category" required placeholder="Category (e.g. Starters)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
@@ -77,50 +99,53 @@ export default function MenuTab() {
       </form>
       <p className="text-muted text-sm -mt-2 mb-3.5">Menu prices change often — click Edit on any item to update its price or cost anytime. Toggle "86" to hide a sold-out item from Billing without deleting it.</p>
 
-      <TableScroll>
-        <DataTable columns={['Item', 'Category', 'Price', 'Cost', 'Margin', 'Status', '']}>
-          {!loaded && <SkeletonRows rows={5} cols={7} />}
-          {loaded && menu.length === 0 && <EmptyRow span={7}>No menu items yet.</EmptyRow>}
-          {loaded && menu.map((item) => {
-            const cost = item.cost || 0;
-            const margin = item.price - cost;
-            const marginPct = item.price ? (margin / item.price) * 100 : 0;
-            const lowMargin = cost > 0 && marginPct < LOW_MARGIN_PCT;
-            const available = item.available !== false;
-            return (
-              <tr key={item.id} className={!available ? 'opacity-50' : ''}>
-                <td className={`${td} flex items-center gap-2`}>
-                  <VegMark veg={item.veg !== false} />
-                  {item.name}
-                </td>
-                <td className={td}>{item.category}</td>
-                <td className={td}>{rupee(item.price)}</td>
-                <td className={td}>{cost ? rupee(cost) : '-'}</td>
-                <td className={`${td} ${lowMargin ? 'text-bad font-bold' : ''}`}>
-                  {cost ? `${rupee(margin)} (${marginPct.toFixed(0)}%)` : '-'}
-                  {lowMargin && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-bad/10 text-bad text-[0.65rem] font-bold uppercase align-middle">Low</span>}
-                </td>
-                <td className={td}>
-                  <button
-                    onClick={() => toggleAvailable(item)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${available ? 'bg-good/15 text-good border-transparent' : 'bg-bad/10 text-bad border-transparent'}`}
-                  >
-                    {available ? 'Available' : '86 - Out of Stock'}
-                  </button>
-                </td>
-                <td className={`${td} space-x-2`}>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditItem(item)}>
-                    Edit
-                  </button>
-                  <button className="text-bad underline text-sm" onClick={() => setMenu(menu.filter((m) => m.id !== item.id))}>
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      </TableScroll>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {!loaded && <SkeletonCards count={6} />}
+        {loaded && rows.length === 0 && <p className="text-muted text-sm col-span-full">No menu items yet.</p>}
+        {loaded && rows.map((item) => (
+          <div
+            key={item.id}
+            className={`relative rounded-xl border p-3.5 shadow-card flex flex-col gap-2 ${item.lowMargin ? 'border-bad' : 'border-border'} ${!item.available ? 'opacity-60' : ''} bg-surface`}
+          >
+            {item.lowMargin && (
+              <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-bad text-white text-[0.62rem] font-bold uppercase shadow-tile">Low Margin</span>
+            )}
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-bold text-sm flex items-center gap-1.5">
+                <VegMark veg={item.veg !== false} />
+                {item.name}
+              </span>
+              <button
+                onClick={() => toggleAvailable(item)}
+                className={`shrink-0 px-2 py-0.5 rounded-full text-[0.65rem] font-bold ${item.available ? 'bg-good/15 text-good' : 'bg-bad/10 text-bad'}`}
+              >
+                {item.available ? 'In Stock' : '86'}
+              </button>
+            </div>
+            <span className="text-xs text-muted -mt-1">{item.category}</span>
+
+            <div className="grid grid-cols-3 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Price</span>
+                <span className="font-bold text-sm">{rupee(item.price)}</span>
+              </div>
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Cost</span>
+                <span className="font-bold text-sm">{item.cost ? rupee(item.cost) : '-'}</span>
+              </div>
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Margin</span>
+                <span className={`font-bold text-sm ${item.lowMargin ? 'text-bad' : 'text-good'}`}>{item.cost ? `${item.marginPct.toFixed(0)}%` : '-'}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-1">
+              <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditItem(item)}>Edit</button>
+              <button className="flex-1 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setMenu(menu.filter((m) => m.id !== item.id))}>Remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <Modal open={!!editItem} onClose={() => setEditItem(null)} title={editItem ? `Edit — ${editItem.name}` : ''}>
         {editItem && (

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonRows } from '../components/Skeleton.jsx';
+import { SkeletonCards } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
@@ -71,13 +71,26 @@ export default function VendorsTab() {
     () => vendors.map((v) => ({ ...v, ...vendorTotals(v.id, v.openingBalance) })),
     [vendors, purchases, payments]
   );
+  const totalPayable = vendorRows.reduce((s, v) => s + Math.max(0, v.balance), 0);
 
   return (
     <section>
-      <h2 className="text-lg font-bold mb-3.5">Vendors &amp; Payables</h2>
+      <h2 className="text-lg font-bold mb-3.5">Vendors &amp; Payables (Khata)</h2>
       <p className="text-muted text-sm -mt-1 mb-3.5">
         Inventory tab mein "Log In/Out" karte waqt vendor select karke amount daaloge to yahan aur Expenses mein automatically add ho jayega.
       </p>
+
+      <div className="grid grid-cols-2 gap-2.5 mb-4">
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Total Vendors</span>
+          <span className="font-extrabold text-xl">{vendors.length}</span>
+        </div>
+        <div className={`rounded-lg p-3 border ${totalPayable > 0 ? 'bg-bad/10 border-bad' : 'bg-surface border-border'}`}>
+          <span className={`block text-[0.68rem] uppercase ${totalPayable > 0 ? 'text-bad' : 'text-muted'}`}>Total Payable (Khata Due)</span>
+          <span className={`font-extrabold text-xl ${totalPayable > 0 ? 'text-bad' : ''}`}>{rupee(totalPayable)}</span>
+        </div>
+      </div>
+
       <form onSubmit={addVendor} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Vendor name (e.g. Sharma Gas Agency)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="contact" placeholder="Contact number (optional)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
@@ -85,40 +98,40 @@ export default function VendorsTab() {
         <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Vendor</button>
       </form>
 
-      <TableScroll>
-        <DataTable columns={['Vendor', 'Contact', 'Opening Balance', 'Purchases', 'Paid', 'Balance Due', 'Actions']}>
-          {!vendorsLoaded && <SkeletonRows rows={3} cols={7} />}
-          {vendorsLoaded && vendorRows.length === 0 && <EmptyRow span={7}>Koi vendor add nahi kiya abhi.</EmptyRow>}
-          {vendorsLoaded && vendorRows.map((v) => {
-            return (
-              <tr key={v.id}>
-                <td className={td}>{v.name}</td>
-                <td className={td}>{v.contact || '-'}</td>
-                <td className={td}>{rupee(v.openingBalance)}</td>
-                <td className={td}>{rupee(v.purchased)}</td>
-                <td className={td}>{rupee(v.paid)}</td>
-                <td className={`${td} ${v.balance > 0 ? 'text-bad font-bold' : 'text-good font-semibold'}`}>
-                  {v.balance > 0 ? `${rupee(v.balance)} due` : `${rupee(-v.balance)} advance`}
-                </td>
-                <td className={`${td} space-x-2`}>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setPayModal(v)}>
-                    Pay Vendor
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(v)}>
-                    History
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditVendor(v)}>
-                    Edit
-                  </button>
-                  <button className="text-bad underline text-sm" onClick={() => setRemoveTarget(v)}>
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      </TableScroll>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {!vendorsLoaded && <SkeletonCards count={3} />}
+        {vendorsLoaded && vendorRows.length === 0 && <p className="text-muted text-sm col-span-full">Koi vendor add nahi kiya abhi.</p>}
+        {vendorsLoaded && vendorRows.map((v) => (
+          <div key={v.id} className={`bg-surface border rounded-xl p-3.5 shadow-card flex flex-col gap-2.5 ${v.balance > 0 ? 'border-bad' : 'border-border'}`}>
+            <div>
+              <span className="font-bold text-sm block">{v.name}</span>
+              <span className="text-xs text-muted">{v.contact || 'No contact'}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Purchases</span>
+                <span className="font-bold text-sm">{rupee(v.purchased)}</span>
+              </div>
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Paid</span>
+                <span className="font-bold text-sm">{rupee(v.paid)}</span>
+              </div>
+            </div>
+            <div className={`rounded-lg p-2 flex items-center justify-between ${v.balance > 0 ? 'bg-bad/10' : 'bg-good/10'}`}>
+              <span className={`text-xs font-semibold ${v.balance > 0 ? 'text-bad' : 'text-good'}`}>{v.balance > 0 ? 'Balance Due' : 'Advance'}</span>
+              <span className={`font-bold ${v.balance > 0 ? 'text-bad' : 'text-good'}`}>{rupee(Math.abs(v.balance))}</span>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-good text-white hover:opacity-90" onClick={() => setPayModal(v)}>Pay Vendor</button>
+              <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(v)}>History</button>
+            </div>
+            <div className="flex gap-1.5">
+              <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditVendor(v)}>Edit</button>
+              <button className="flex-1 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setRemoveTarget(v)}>Remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <Modal open={!!payModal} onClose={() => setPayModal(null)} title={payModal ? `Pay Vendor — ${payModal.name}` : ''}>
         <form onSubmit={savePayment}>

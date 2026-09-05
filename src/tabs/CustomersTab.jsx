@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonRows } from '../components/Skeleton.jsx';
+import { SkeletonCards } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 function whatsappReminderLink(phone, name, amount) {
@@ -89,65 +89,98 @@ export default function CustomersTab() {
   const sortedCustomers = useMemo(() => customers.slice().sort((a, b) => b.totalSpent - a.totalSpent), [customers]);
   const customerRows = useMemo(() => sortedCustomers.map((c) => ({ ...c, udhar: udharBalance(c.id) })), [sortedCustomers, credit]);
 
+  const totalPoints = customers.reduce((s, c) => s + c.points, 0);
+  const totalUdhar = customerRows.reduce((s, c) => s + Math.max(0, c.udhar), 0);
+  const vipThreshold = customers.length ? Math.max(2000, [...customers].sort((a, b) => b.totalSpent - a.totalSpent)[0]?.totalSpent * 0.6 || 0) : 0;
+
   return (
     <section>
       <h2 className="text-lg font-bold mb-3.5">Customers, Loyalty &amp; Udhar</h2>
       <p className="text-muted text-sm -mt-1 mb-3.5">
         Billing tab mein customer ka phone number daalne se automatically visits, spend aur points (₹100 = 1 point) track ho jaate hain. Udhar khata yahan se manually log karein.
       </p>
+
+      <div className="grid grid-cols-3 gap-2.5 mb-4">
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Registered Guests</span>
+          <span className="font-extrabold text-xl">{customers.length}</span>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3">
+          <span className="block text-[0.68rem] text-muted uppercase">Active Points</span>
+          <span className="font-extrabold text-xl">{totalPoints}</span>
+        </div>
+        <div className={`rounded-lg p-3 border ${totalUdhar > 0 ? 'bg-bad/10 border-bad' : 'bg-surface border-border'}`}>
+          <span className={`block text-[0.68rem] uppercase ${totalUdhar > 0 ? 'text-bad' : 'text-muted'}`}>Running Udhar</span>
+          <span className={`font-extrabold text-xl ${totalUdhar > 0 ? 'text-bad' : ''}`}>{rupee(totalUdhar)}</span>
+        </div>
+      </div>
+
       <form onSubmit={addCustomer} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Customer name" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="phone" required placeholder="Phone number" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Customer</button>
       </form>
 
-      <TableScroll>
-        <DataTable columns={['Name', 'Phone', 'Visits', 'Total Spent', 'Points', 'Udhar Due', 'Actions']}>
-          {!customersLoaded && <SkeletonRows rows={4} cols={7} />}
-          {customersLoaded && customerRows.length === 0 && <EmptyRow span={7}>Koi customer add nahi kiya abhi.</EmptyRow>}
-          {customersLoaded && customerRows.map((c) => (
-              <tr key={c.id}>
-                <td className={td}>{c.name || <span className="text-muted italic">Unnamed</span>}</td>
-                <td className={td}>{c.phone}</td>
-                <td className={td}>{c.visits}</td>
-                <td className={td}>{rupee(c.totalSpent)}</td>
-                <td className={td}>{c.points}</td>
-                <td className={td}>
-                  {c.udhar > 0 ? (
-                    <span className="px-2 py-0.5 rounded-full bg-bad/10 text-bad text-xs font-bold">{rupee(c.udhar)}</span>
-                  ) : '-'}
-                </td>
-                <td className={`${td} space-x-2 whitespace-nowrap`}>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setUdharModal(c)}>
-                    Udhar
-                  </button>
-                  {c.udhar > 0 && c.phone && (
-                    <a
-                      href={whatsappReminderLink(c.phone, c.name, c.udhar)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 rounded-md text-xs font-semibold bg-good/10 text-good inline-block"
-                    >
-                      WhatsApp Reminder
-                    </a>
-                  )}
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setAdjustModal(c)}>
-                    Adjust Points
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(c)}>
-                    History
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditCustomer(c)}>
-                    Edit
-                  </button>
-                  <button className="text-bad underline text-sm" onClick={() => setCustomers(customers.filter((x) => x.id !== c.id))}>
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-        </DataTable>
-      </TableScroll>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {!customersLoaded && <SkeletonCards count={6} />}
+        {customersLoaded && customerRows.length === 0 && <p className="text-muted text-sm col-span-full">Koi customer add nahi kiya abhi.</p>}
+        {customersLoaded && customerRows.map((c) => {
+          const isVip = c.totalSpent >= vipThreshold && c.totalSpent > 0;
+          return (
+            <div key={c.id} className={`relative bg-surface border rounded-xl p-3.5 shadow-card flex flex-col gap-2.5 ${c.udhar > 0 ? 'border-bad' : isVip ? 'border-secondary' : 'border-border'}`}>
+              {isVip && (
+                <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-secondary text-white text-[0.6rem] font-bold uppercase shadow-tile">VIP</span>
+              )}
+              <div>
+                <span className="font-bold text-sm block">{c.name || <span className="text-muted italic">Unnamed</span>}</span>
+                <span className="text-xs text-muted">{c.phone}</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Visits</span>
+                  <span className="font-bold text-sm">{c.visits}</span>
+                </div>
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Spent</span>
+                  <span className="font-bold text-sm">{rupee(c.totalSpent)}</span>
+                </div>
+                <div>
+                  <span className="block text-[0.6rem] text-muted uppercase">Points</span>
+                  <span className="font-bold text-sm">{c.points}</span>
+                </div>
+              </div>
+
+              {c.udhar > 0 && (
+                <div className="bg-bad/10 border border-bad/30 rounded-lg p-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-bad">Udhar Pending</span>
+                  <span className="font-bold text-bad">{rupee(c.udhar)}</span>
+                </div>
+              )}
+
+              <div className="flex gap-1.5 flex-wrap">
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setUdharModal(c)}>Udhar</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setAdjustModal(c)}>Points</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setHistoryModal(c)}>History</button>
+              </div>
+              {c.udhar > 0 && c.phone && (
+                <a
+                  href={whatsappReminderLink(c.phone, c.name, c.udhar)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block text-center py-1.5 rounded-md text-xs font-semibold bg-good text-white hover:opacity-90"
+                >
+                  Send WhatsApp Reminder
+                </a>
+              )}
+              <div className="flex gap-1.5">
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditCustomer(c)}>Edit</button>
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setCustomers(customers.filter((x) => x.id !== c.id))}>Remove</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       <Modal open={!!udharModal} onClose={() => setUdharModal(null)} title={udharModal ? `Udhar Khata — ${udharModal.name || udharModal.phone}` : ''}>
         {udharModal && (

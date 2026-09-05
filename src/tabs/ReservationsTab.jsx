@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocalState } from '../lib/useLocalState.js';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
-import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
-import { SkeletonRows } from '../components/Skeleton.jsx';
+import { SkeletonCards } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 const STATUS_STYLE = {
@@ -125,48 +124,67 @@ export default function ReservationsTab() {
         ))}
       </div>
 
-      <TableScroll>
-        <DataTable columns={['Date', 'Time', 'Name', 'Phone', 'Guests', 'Table', 'Advance', 'Status', 'Actions']}>
-          {!loaded && <SkeletonRows rows={4} cols={9} />}
-          {loaded && filtered.length === 0 && <EmptyRow span={9}>Koi reservation nahi hai.</EmptyRow>}
-          {loaded && filtered.map((r) => (
-            <tr key={r.id}>
-              <td className={td}>{r.date}</td>
-              <td className={td}>{r.time}</td>
-              <td className={td}>{r.name}</td>
-              <td className={td}>{r.phone}</td>
-              <td className={td}>{r.partySize}</td>
-              <td className={td}>{r.table || 'Koi bhi'}</td>
-              <td className={td}>{r.advanceAmount > 0 ? rupee(r.advanceAmount) : '-'}</td>
-              <td className={td}>
-                <span className={`px-2 py-1 rounded-md text-xs font-semibold capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
-              </td>
-              <td className={`${td} space-x-2 whitespace-nowrap`}>
-                {(r.status === 'upcoming' || r.status === 'waitlist') && (
-                  <>
-                    <select
-                      defaultValue=""
-                      onChange={(e) => {
-                        if (!e.target.value) return;
-                        setReservations(reservations.map((x) => (x.id === r.id ? { ...x, table: e.target.value, status: 'seated' } : x)));
-                      }}
-                      className="px-2 py-1 rounded-md text-xs font-semibold bg-bg border border-border"
-                    >
-                      <option value="">Seat at...</option>
-                      {tables.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <button className="px-2.5 py-1 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setStatus(r.id, 'cancelled')}>Cancel</button>
-                  </>
-                )}
-                {r.status === 'seated' && (
-                  <button className="px-2.5 py-1 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setStatus(r.id, 'completed')}>Completed</button>
-                )}
-                <button className="text-bad underline text-sm" onClick={() => setReservations(reservations.filter((x) => x.id !== r.id))}>Remove</button>
-              </td>
-            </tr>
-          ))}
-        </DataTable>
-      </TableScroll>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {!loaded && <SkeletonCards count={4} />}
+        {loaded && filtered.length === 0 && <p className="text-muted text-sm col-span-full">Koi reservation nahi hai.</p>}
+        {loaded && filtered.map((r) => (
+          <div key={r.id} className={`bg-surface border rounded-xl p-3.5 shadow-card flex flex-col gap-2.5 ${r.status === 'waitlist' ? 'border-secondary' : 'border-border'}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <span className="font-bold text-sm block">{r.name}</span>
+                <span className="text-xs text-muted">{r.phone}</span>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase capitalize ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5 bg-well/60 rounded-lg p-2 text-center">
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Date/Time</span>
+                <span className="font-bold text-xs">{r.date === todayStr() ? 'Today' : r.date} {r.time}</span>
+              </div>
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Guests</span>
+                <span className="font-bold text-sm">{r.partySize}</span>
+              </div>
+              <div>
+                <span className="block text-[0.6rem] text-muted uppercase">Table</span>
+                <span className="font-bold text-sm">{r.table || 'Any'}</span>
+              </div>
+            </div>
+
+            {r.advanceAmount > 0 && (
+              <div className="bg-secondary/10 border border-secondary/30 rounded-lg p-2 flex items-center justify-between">
+                <span className="text-xs font-semibold text-secondary-dark">Advance Token</span>
+                <span className="font-bold text-secondary-dark">{rupee(r.advanceAmount)}</span>
+              </div>
+            )}
+            {r.note && <p className="text-xs text-muted italic bg-bg rounded-lg p-2">"{r.note}"</p>}
+
+            <div className="flex gap-1.5 flex-wrap">
+              {(r.status === 'upcoming' || r.status === 'waitlist') && (
+                <>
+                  <select
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      setReservations(reservations.map((x) => (x.id === r.id ? { ...x, table: e.target.value, status: 'seated' } : x)));
+                    }}
+                    className="flex-1 min-w-[100px] px-2 py-1.5 rounded-md text-xs font-semibold bg-good text-white border-0"
+                  >
+                    <option value="">Seat at...</option>
+                    {tables.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setStatus(r.id, 'cancelled')}>Cancel</button>
+                </>
+              )}
+              {r.status === 'seated' && (
+                <button className="flex-1 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setStatus(r.id, 'completed')}>Mark Completed</button>
+              )}
+              <button className="px-2.5 py-1.5 rounded-md text-xs font-semibold text-bad border border-bad/30 hover:bg-bad/5" onClick={() => setReservations(reservations.filter((x) => x.id !== r.id))}>Remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <Modal open={waitlistOpen} onClose={() => setWaitlistOpen(false)} title="Add to Waitlist">
         <p className="text-muted text-xs -mt-1 mb-3">Walk-in guest jinke liye abhi table available nahi hai — table free hote hi "Seat at" se assign kar dena.</p>
