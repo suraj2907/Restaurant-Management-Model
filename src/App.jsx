@@ -1,10 +1,16 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSetting, setSetting } from './lib/db.js';
 import { downloadBackup, readBackupFile, applyBackup } from './lib/backup.js';
 import { downloadExcel } from './lib/exportExcel.js';
+import { useSupabaseTable } from './lib/useSupabaseTable.js';
 import Icon from './components/Icons.jsx';
 import { Skeleton } from './components/Skeleton.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
+
+// The 5 tabs a counter/floor staffer reaches for constantly during service -
+// pinned to a bottom tab bar on mobile. Everything else lives behind "More".
+const MOBILE_PRIMARY_TABS = ['billing', 'kitchen', 'reservations', 'staff', 'audit'];
+const MOBILE_TAB_SHORT_LABEL = { billing: 'POS/Order', kitchen: 'KOT Live', reservations: 'Bookings', staff: 'Staff', audit: 'Hisaab' };
 
 // Code-split each tab into its own chunk - only the active tab (plus
 // whichever ones have been visited) is ever downloaded, instead of one
@@ -88,6 +94,8 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(false);
   const [pendingRestore, setPendingRestore] = useState(null);
   const fileInputRef = useRef(null);
+  const [kotTickets] = useSupabaseTable('kot_tickets', []);
+  const activeKotCount = useMemo(() => kotTickets.filter((k) => k.status === 'active').length, [kotTickets]);
 
   useEffect(() => {
     getSetting('rm_name', 'My Restaurant').then(setName);
@@ -118,8 +126,6 @@ export default function App() {
     setActiveTab(id);
     setNavOpen(false);
   }, []);
-
-  const currentTab = TABS.find((t) => t.id === activeTab);
 
   const utilityButtons = (
     <>
@@ -163,21 +169,27 @@ export default function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Mobile top bar */}
-        <header className="sm:hidden flex items-center gap-3 px-4 py-3 bg-surface border-b border-border">
+        <header className="sm:hidden flex items-center gap-2.5 px-4 py-3 bg-surface border-b border-border">
+          <span className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center font-extrabold text-sm shrink-0">
+            {(name || 'R')[0].toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block font-bold text-sm text-ink truncate">{name}</span>
+            <span className="flex items-center gap-1 text-[0.68rem] text-muted">
+              <span className={`w-1.5 h-1.5 rounded-full ${activeKotCount > 0 ? 'bg-good animate-pulse' : 'bg-border'}`} />
+              {activeKotCount > 0 ? `Kitchen Active (${activeKotCount})` : 'Counter Active'}
+            </span>
+          </div>
           <button
             onClick={() => setNavOpen(true)}
             className="w-9 h-9 flex items-center justify-center rounded-lg bg-bg border border-border shrink-0"
-            aria-label="Open menu"
+            aria-label="More options"
           >
             <Icon name="hamburger" className="w-5 h-5" />
           </button>
-          <span className="flex items-center gap-2 font-semibold text-sm text-ink min-w-0">
-            <Icon name={currentTab.icon} className="w-4 h-4 shrink-0 text-accent-dark" />
-            <span className="truncate">{currentTab.label}</span>
-          </span>
         </header>
 
-        <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5 pb-14">
+        <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5 pb-24 sm:pb-14">
           <Suspense fallback={<TabFallback />}>
             {activeTab === 'billing' && <BillingTab restaurantName={name} />}
             {activeTab === 'kitchen' && <KitchenDisplayTab />}
@@ -193,6 +205,30 @@ export default function App() {
             {activeTab === 'menu' && <MenuTab />}
           </Suspense>
         </main>
+
+        {/* Mobile bottom tab bar - the 5 destinations used constantly during
+            service; everything else lives behind the "More" drawer above. */}
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-surface border-t border-border flex items-stretch shadow-panel">
+          {MOBILE_PRIMARY_TABS.map((id) => {
+            const t = TABS.find((x) => x.id === id);
+            const isActive = activeTab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => selectTab(id)}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[0.62rem] font-semibold ${isActive ? 'text-accent' : 'text-muted'}`}
+              >
+                {id === 'kitchen' && activeKotCount > 0 && (
+                  <span className="absolute top-1 right-1/4 min-w-[16px] h-4 px-1 rounded-full bg-bad text-white text-[0.55rem] font-bold flex items-center justify-center">
+                    {activeKotCount}
+                  </span>
+                )}
+                <Icon name={t.icon} className="w-5 h-5" />
+                {MOBILE_TAB_SHORT_LABEL[id]}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       <ConfirmModal

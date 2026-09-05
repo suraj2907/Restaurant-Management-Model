@@ -28,6 +28,13 @@ export function toSnake(row) {
   return out;
 }
 
+// Multiple components can (and do) call useSupabaseTable() for the same
+// table at the same time - e.g. App.jsx's header badge and the active tab
+// both watching 'kot_tickets'. Supabase's realtime client errors if two
+// channels share a name ("cannot add postgres_changes callbacks... after
+// subscribe()"), so every hook instance needs its own unique channel name.
+let channelInstanceCounter = 0;
+
 // Drop-in replacement for useLocalState(key, initial) backed by a Supabase
 // table instead of localStorage: same [rows, setRows] shape, but writes are
 // diffed against the previous snapshot and pushed as upsert/delete calls,
@@ -51,7 +58,7 @@ export function useSupabaseTable(table, initial = []) {
     });
 
     const channel = supabase
-      .channel(`realtime:${table}`)
+      .channel(`realtime:${table}:${++channelInstanceCounter}`)
       .on('postgres_changes', { event: '*', schema: 'public', table }, async () => {
         const { data } = await supabase.from(table).select('*');
         if (data && active) {
