@@ -30,6 +30,7 @@ const TABS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('billing');
   const [name, setName] = useState(() => store.get('rm_name', 'My Restaurant'));
+  const [navOpen, setNavOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -42,6 +43,11 @@ export default function App() {
     if (!file) return;
     restoreBackup(file, () => location.reload());
     e.target.value = '';
+  }
+
+  function selectTab(id) {
+    setActiveTab(id);
+    setNavOpen(false);
   }
 
   const tabContent = {
@@ -57,26 +63,26 @@ export default function App() {
     menu: <MenuTab />
   };
 
-  const utilityButtons = (extraClass = '') => (
+  const currentTab = TABS.find((t) => t.id === activeTab);
+
+  const utilityButtons = (
     <>
-      <button onClick={downloadExcel} className={`px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left ${extraClass}`} title="Bills, expenses, inventory, vendors, staff, customers - sab Excel file mein">
+      <button onClick={downloadExcel} className="px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left" title="Bills, expenses, inventory, vendors, staff, customers - sab Excel file mein">
         Export Excel
       </button>
-      <button onClick={downloadBackup} className={`px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left ${extraClass}`} title="Pura data ek file mein download karein (app mein restore karne ke liye)">
+      <button onClick={downloadBackup} className="px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left" title="Pura data ek file mein download karein (app mein restore karne ke liye)">
         Backup Data
       </button>
-      <button onClick={() => fileInputRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left ${extraClass}`} title="Pehle se saved backup file se data restore karein">
+      <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left" title="Pehle se saved backup file se data restore karein">
         Restore Data
       </button>
     </>
   );
 
-  return (
-    <div className="flex min-h-screen">
-      <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleRestoreFile} />
-
-      {/* Desktop left sidebar */}
-      <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-surface border-r border-border h-screen sticky top-0">
+  // Shared between the persistent desktop sidebar and the mobile slide-in drawer.
+  function SidebarNav({ onNavigate }) {
+    return (
+      <>
         <div className="p-4 border-b border-border">
           <input
             className="w-full text-base font-bold text-accent-dark bg-transparent px-1 py-1 rounded-md focus:outline focus:outline-2 focus:outline-accent focus:bg-bg"
@@ -89,7 +95,7 @@ export default function App() {
           {TABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => onNavigate(t.id)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-left ${
                 activeTab === t.id ? 'bg-accent text-white' : 'text-muted hover:bg-bg hover:text-ink'
               }`}
@@ -100,37 +106,52 @@ export default function App() {
           ))}
         </nav>
         <div className="p-2.5 border-t border-border flex flex-col gap-1.5">
-          {utilityButtons()}
+          {utilityButtons}
         </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen">
+      <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleRestoreFile} />
+
+      {/* Desktop persistent sidebar */}
+      <aside className="hidden sm:flex sm:flex-col w-56 shrink-0 bg-surface border-r border-border h-screen sticky top-0">
+        <SidebarNav onNavigate={selectTab} />
       </aside>
+
+      {/* Mobile slide-in drawer */}
+      {navOpen && (
+        <div className="sm:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-ink/50" onClick={() => setNavOpen(false)} />
+          <aside className="relative flex flex-col w-64 max-w-[80vw] h-full bg-surface border-r border-border">
+            <button
+              onClick={() => setNavOpen(false)}
+              className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-lg bg-bg border border-border"
+              aria-label="Close menu"
+            >
+              <Icon name="close" className="w-4 h-4" />
+            </button>
+            <SidebarNav onNavigate={selectTab} />
+          </aside>
+        </div>
+      )}
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Mobile top bar */}
-        <header className="sm:hidden flex flex-col gap-2.5 px-4 py-3 bg-surface border-b border-border">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <input
-              className="text-lg font-bold text-accent-dark bg-transparent px-1 py-1 rounded-md max-w-[55vw] focus:outline focus:outline-2 focus:outline-accent focus:bg-bg"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              spellCheck={false}
-            />
-            <div className="flex items-center gap-1.5">
-              {utilityButtons('!px-2.5 !py-1.5')}
-            </div>
-          </div>
-          <nav className="flex gap-1.5 flex-wrap">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${
-                  activeTab === t.id ? 'bg-accent text-white border-accent' : 'bg-bg text-muted border-border'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
+        <header className="sm:hidden flex items-center gap-3 px-4 py-3 bg-surface border-b border-border">
+          <button
+            onClick={() => setNavOpen(true)}
+            className="w-9 h-9 flex items-center justify-center rounded-lg bg-bg border border-border shrink-0"
+            aria-label="Open menu"
+          >
+            <Icon name="hamburger" className="w-5 h-5" />
+          </button>
+          <span className="flex items-center gap-2 font-semibold text-sm text-ink min-w-0">
+            <Icon name={currentTab.icon} className="w-4 h-4 shrink-0 text-accent-dark" />
+            <span className="truncate">{currentTab.label}</span>
+          </span>
         </header>
 
         <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5 pb-14">

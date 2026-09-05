@@ -8,7 +8,9 @@ const PATHS = {
   staff: 'M8 12a3 3 0 100-6 3 3 0 000 6zm8 0a3 3 0 100-6 3 3 0 000 6zM2 20c0-3 2.5-5 6-5s6 2 6 5m2-5c3 0 5.5 2 6 5',
   vendors: 'M3 7h11v9H3V7zm11 3h4l3 3v3h-7v-6zM6 19a2 2 0 100-4 2 2 0 000 4zm11 0a2 2 0 100-4 2 2 0 000 4z',
   customers: 'M12 12a4 4 0 100-8 4 4 0 000 8zm-7 8c0-3.5 3-6 7-6s7 2.5 7 6',
-  menu: 'M9 3l-2 4H3l2 4-2 4h4l2 4 2-4h4l-2-4 2-4h-4l-2-4z'
+  menu: 'M9 3l-2 4H3l2 4-2 4h4l2 4 2-4h4l-2-4 2-4h-4l-2-4z',
+  hamburger: 'M4 6h16M4 12h16M4 18h16',
+  close: 'M6 6l12 12M18 6L6 18'
 };
 
 export default function Icon({ name, className = 'w-4 h-4' }) {
