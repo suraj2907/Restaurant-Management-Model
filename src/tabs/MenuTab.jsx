@@ -1,0 +1,63 @@
+import { useLocalState } from '../lib/useLocalState.js';
+import { uid, rupee } from '../lib/store.js';
+import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
+
+export default function MenuTab() {
+  const [menu, setMenu] = useLocalState('rm_menu', []);
+
+  function addItem(e) {
+    e.preventDefault();
+    const f = e.target;
+    setMenu([
+      ...menu,
+      {
+        id: uid(),
+        name: f.name.value.trim(),
+        category: f.category.value.trim(),
+        price: parseFloat(f.price.value),
+        cost: parseFloat(f.cost.value) || 0
+      }
+    ]);
+    f.reset();
+  }
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+        <h2 className="text-lg font-bold m-0">Menu Setup</h2>
+      </div>
+      <form onSubmit={addItem} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
+        <input name="name" required placeholder="Item name" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <input name="category" required placeholder="Category (e.g. Starters)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <input name="price" type="number" step="0.01" required placeholder="Selling price" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <input name="cost" type="number" step="0.01" placeholder="Cost price (optional)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Item</button>
+      </form>
+
+      <TableScroll>
+        <DataTable columns={['Item', 'Category', 'Price', 'Cost', 'Margin', '']}>
+          {menu.length === 0 && <EmptyRow span={6}>No menu items yet.</EmptyRow>}
+          {menu.map((item) => {
+            const cost = item.cost || 0;
+            const margin = item.price - cost;
+            const marginPct = item.price ? (margin / item.price) * 100 : 0;
+            return (
+              <tr key={item.id}>
+                <td className={td}>{item.name}</td>
+                <td className={td}>{item.category}</td>
+                <td className={td}>{rupee(item.price)}</td>
+                <td className={td}>{cost ? rupee(cost) : '-'}</td>
+                <td className={td}>{cost ? `${rupee(margin)} (${marginPct.toFixed(0)}%)` : '-'}</td>
+                <td className={td}>
+                  <button className="text-bad underline text-sm" onClick={() => setMenu(menu.filter((m) => m.id !== item.id))}>
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </DataTable>
+      </TableScroll>
+    </section>
+  );
+}

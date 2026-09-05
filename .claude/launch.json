@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "restaurant-app",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8123", "--directory", "F:/Restaurant management model"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "8123", "--strictPort"],
       "port": 8123
     }
   ]
