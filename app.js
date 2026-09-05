@@ -287,8 +287,9 @@ document.getElementById('completeBillBtn').addEventListener('click', () => {
 
 let modalBill = null;
 
-function showReceipt(bill) {
+function showReceipt(bill, mode = 'print') {
   modalBill = bill;
+  document.getElementById('printReceiptBtn').textContent = mode === 'reprint' ? 'Reprint' : 'Print';
   const name = store.get('rm_name', 'My Restaurant');
   const dt = new Date(bill.ts);
   const itemsHtml = bill.items.map(i => `
@@ -711,7 +712,7 @@ document.querySelector('#recentBillsTable tbody').addEventListener('click', (e) 
   const id = e.target.closest('tr')?.dataset.viewBill;
   if (!id) return;
   const bill = store.get('rm_bills', []).find(b => b.id === id);
-  if (bill) showReceipt(bill);
+  if (bill) showReceipt(bill, 'reprint');
 });
 
 /* ---------- Init ---------- */
