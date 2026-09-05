@@ -42,6 +42,7 @@ create table if not exists bills (
   subtotal numeric,
   gst_pct numeric,
   gst numeric,
+  round_off numeric default 0,
   total numeric,
   payment text,
   staff_id text,
@@ -236,6 +237,9 @@ end $$;
 -- customer udhar (credit) khata, daily cash audit, Kitchen Display.
 -- Safe to re-run.
 -- ============================================================
+
+-- Bills: rounded-total off-by-a-few-paise adjustment, shown on the receipt.
+alter table bills add column if not exists round_off numeric not null default 0;
 
 -- Menu: veg/non-veg tag + "86'd" (temporarily out of stock) toggle.
 alter table menu add column if not exists veg boolean not null default true;

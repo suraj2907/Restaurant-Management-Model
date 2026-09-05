@@ -6,6 +6,7 @@ import { useSupabaseTable } from './lib/useSupabaseTable.js';
 import Icon from './components/Icons.jsx';
 import { Skeleton } from './components/Skeleton.jsx';
 import ConfirmModal from './components/ConfirmModal.jsx';
+import Modal, { ModalActions, Btn } from './components/Modal.jsx';
 
 // The 5 tabs a counter/floor staffer reaches for constantly during service -
 // pinned to a bottom tab bar on mobile. Everything else lives behind "More".
@@ -96,9 +97,12 @@ export default function App() {
   const fileInputRef = useRef(null);
   const [kotTickets] = useSupabaseTable('kot_tickets', []);
   const activeKotCount = useMemo(() => kotTickets.filter((k) => k.status === 'active').length, [kotTickets]);
+  const [details, setDetails] = useState({ address: '', phone: '', gstNumber: '' });
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     getSetting('rm_name', 'My Restaurant').then(setName);
+    getSetting('rm_details', { address: '', phone: '', gstNumber: '' }).then(setDetails);
   }, []);
 
   useEffect(() => {
@@ -127,6 +131,15 @@ export default function App() {
     setNavOpen(false);
   }, []);
 
+  const saveDetails = useCallback((e) => {
+    e.preventDefault();
+    const f = e.target;
+    const next = { address: f.address.value.trim(), phone: f.phone.value.trim(), gstNumber: f.gstNumber.value.trim() };
+    setDetails(next);
+    setSetting('rm_details', next);
+    setDetailsOpen(false);
+  }, []);
+
   const utilityButtons = (
     <>
       <button onClick={downloadExcel} className="px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left" title="Bills, expenses, inventory, vendors, staff, customers - sab Excel file mein">
@@ -137,6 +150,9 @@ export default function App() {
       </button>
       <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left" title="Pehle se saved backup file se data restore karein">
         Restore Data
+      </button>
+      <button onClick={() => setDetailsOpen(true)} className="px-3 py-2 rounded-lg text-xs font-semibold bg-bg border border-border hover:text-ink text-left" title="Address, phone, GST number - bill print pe dikhega">
+        Restaurant Details
       </button>
     </>
   );
@@ -191,10 +207,10 @@ export default function App() {
 
         <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5 pb-24 sm:pb-14">
           <Suspense fallback={<TabFallback />}>
-            {activeTab === 'billing' && <BillingTab restaurantName={name} />}
+            {activeTab === 'billing' && <BillingTab restaurantName={name} restaurantDetails={details} />}
             {activeTab === 'kitchen' && <KitchenDisplayTab />}
             {activeTab === 'reservations' && <ReservationsTab />}
-            {activeTab === 'dashboard' && <DashboardTab restaurantName={name} />}
+            {activeTab === 'dashboard' && <DashboardTab restaurantName={name} restaurantDetails={details} />}
             {activeTab === 'reports' && <ReportsTab />}
             {activeTab === 'audit' && <CashAuditTab />}
             {activeTab === 'inventory' && <InventoryTab />}
@@ -230,6 +246,28 @@ export default function App() {
           })}
         </nav>
       </div>
+
+      <Modal open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Restaurant Details">
+        <p className="text-muted text-xs -mt-1 mb-3">Ye bill print/download pe dikhega — GSTIN aur address customer ke liye zaroori hai.</p>
+        <form onSubmit={saveDetails}>
+          <div className="flex flex-col gap-1 mb-3">
+            <label className="text-xs text-muted font-semibold">Address</label>
+            <input name="address" defaultValue={details.address} placeholder="e.g. 12 MG Road, Indore" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+          </div>
+          <div className="flex flex-col gap-1 mb-3">
+            <label className="text-xs text-muted font-semibold">Phone number</label>
+            <input name="phone" defaultValue={details.phone} placeholder="e.g. 98765 43210" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+          </div>
+          <div className="flex flex-col gap-1 mb-3">
+            <label className="text-xs text-muted font-semibold">GST Number (GSTIN)</label>
+            <input name="gstNumber" defaultValue={details.gstNumber} placeholder="e.g. 23AAAAA0000A1Z5" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+          </div>
+          <ModalActions>
+            <Btn variant="primary" type="submit">Save</Btn>
+            <Btn type="button" onClick={() => setDetailsOpen(false)}>Cancel</Btn>
+          </ModalActions>
+        </form>
+      </Modal>
 
       <ConfirmModal
         open={!!pendingRestore}

@@ -8,7 +8,7 @@ import ConfirmModal from '../components/ConfirmModal.jsx';
 import Icon, { VegMark } from '../components/Icons.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 
-export default function BillingTab({ restaurantName }) {
+export default function BillingTab({ restaurantName, restaurantDetails }) {
   const [tables, setTables] = useLocalState('rm_tables', []);
   const [openOrders, setOpenOrders] = useLocalState('rm_open_orders', {});
   const [kotSent, setKotSent] = useLocalState('rm_kot_sent', {}); // { table: { menuId: qtyAlreadySentToKitchen } }
@@ -410,13 +410,15 @@ export default function BillingTab({ restaurantName }) {
           </div>
 
           <div className="bg-well/60 mt-3.5 px-4 pt-3 pb-1 text-sm border-t border-border">
-            <div className="flex justify-between py-1"><span>Item Subtotal</span><span>{rupee(subtotal)}</span></div>
             <div className="flex justify-between py-1 items-center">
+              <span>Item Subtotal</span>
               <span className="flex items-center gap-1">
-                CGST + SGST (<input type="number" value={gstPct} onChange={(e) => setGstPct(parseFloat(e.target.value) || 0)} className="w-10 border border-border rounded px-1 text-center" />% total)
+                {rupee(subtotal)}
+                <span className="text-muted text-xs">(GST <input type="number" value={gstPct} onChange={(e) => setGstPct(parseFloat(e.target.value) || 0)} className="w-10 border border-border rounded px-1 text-center" />%)</span>
               </span>
-              <span>{rupee(gst)}</span>
             </div>
+            <div className="flex justify-between py-1"><span>CGST ({(gstPct / 2).toFixed(1)}%)</span><span>{rupee(gst / 2)}</span></div>
+            <div className="flex justify-between py-1"><span>SGST ({(gstPct / 2).toFixed(1)}%)</span><span>{rupee(gst / 2)}</span></div>
             <div className="flex justify-between py-1 text-xs text-muted"><span>Round off</span><span>{rupee(roundOff)}</span></div>
             <div className="flex justify-between py-2.5 border-t border-border mt-1.5 font-extrabold text-xl text-accent"><span>Net Payable</span><span>{rupee(roundedTotal)}</span></div>
           </div>
@@ -469,10 +471,10 @@ export default function BillingTab({ restaurantName }) {
       </div>
 
       <Modal open={!!receipt} onClose={() => setReceipt(null)} printArea>
-        {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} />}
+        {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
         <ModalActions>
           <Btn variant="primary" onClick={() => window.print()}>{receipt?.mode === 'reprint' ? 'Reprint' : 'Print'}</Btn>
-          <Btn onClick={() => receipt && downloadBill(receipt.bill, restaurantName)}>Download</Btn>
+          <Btn onClick={() => receipt && downloadBill(receipt.bill, restaurantName, restaurantDetails)}>Download</Btn>
           <Btn onClick={() => setReceipt(null)}>Close</Btn>
         </ModalActions>
       </Modal>

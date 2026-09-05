@@ -22,7 +22,7 @@ function rangeStart(range) {
   return 0;
 }
 
-export default function DashboardTab({ restaurantName }) {
+export default function DashboardTab({ restaurantName, restaurantDetails }) {
   const [bills, , billsLoaded] = useSupabaseTable('bills', []);
   const [expenses, , expensesLoaded] = useSupabaseTable('expenses', []);
   const [range, setRange] = useState('today');
@@ -140,10 +140,10 @@ export default function DashboardTab({ restaurantName }) {
       </div>
 
       <Modal open={!!receipt} onClose={() => setReceipt(null)} printArea>
-        {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} />}
+        {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
         <ModalActions>
           <Btn variant="primary" onClick={() => window.print()}>Reprint</Btn>
-          <Btn onClick={() => receipt && downloadBill(receipt.bill, restaurantName)}>Download</Btn>
+          <Btn onClick={() => receipt && downloadBill(receipt.bill, restaurantName, restaurantDetails)}>Download</Btn>
           <Btn onClick={() => setReceipt(null)}>Close</Btn>
         </ModalActions>
       </Modal>
