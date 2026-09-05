@@ -8,18 +8,19 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace']
       },
       colors: {
-        bg: '#FAF7F2',
-        well: '#F4EFEB',
+        // Restro Hisaab v2 palette (Terracotta Amber POS utility theme).
+        bg: '#F8FAFC',
+        well: '#F1F5F9',
         surface: '#FFFFFF',
-        border: '#E6DFD5',
-        ink: '#212529',
-        muted: '#6C727A',
-        accent: { DEFAULT: '#B5541A', dark: '#9A4312', active: '#C85E22' },
-        secondary: { DEFAULT: '#E0871B', container: '#FEF3C7', dark: '#C66F0E' },
-        good: { DEFAULT: '#1E7E34', container: '#D4EDDA', text: '#0F4B1E' },
-        bad: { DEFAULT: '#C92A2A', container: '#F8D7DA', text: '#781313' },
-        pending: { DEFAULT: '#D97706', container: '#FEF3C7', text: '#783D04' },
-        info: { DEFAULT: '#2563EB', container: '#DBEAFE', text: '#1E40AF' }
+        border: '#E2E8F0',
+        ink: '#0F172A',
+        muted: '#64748B',
+        accent: { DEFAULT: '#D9531E', dark: '#BF4413', active: '#C2410C' },
+        secondary: { DEFAULT: '#F59E0B', container: '#FEF3C7', dark: '#B45309' },
+        good: { DEFAULT: '#15803D', container: '#DCFCE7', text: '#166534' },
+        bad: { DEFAULT: '#DC2626', container: '#FEE2E2', text: '#B91C1C' },
+        pending: { DEFAULT: '#D97706', container: '#FEF3C7', text: '#92400E' },
+        info: { DEFAULT: '#0369A1', container: '#E0F2FE', text: '#0369A1' }
       },
       boxShadow: {
         card: '0 1px 3px rgba(33,37,41,0.04), 0 1px 2px rgba(33,37,41,0.02)',

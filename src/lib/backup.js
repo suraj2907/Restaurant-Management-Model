@@ -6,7 +6,8 @@ const RM_KEY_PREFIX = 'rm_';
 const DB_TABLES = [
   'menu', 'inventory', 'stock_log', 'restaurant_tables', 'bills', 'expenses',
   'staff', 'salary_payments', 'attendance', 'vendors', 'vendor_purchases',
-  'vendor_payments', 'customers', 'loyalty_log', 'reservations', 'settings'
+  'vendor_payments', 'customers', 'loyalty_log', 'reservations', 'settings',
+  'customer_credit', 'daily_tips', 'cash_audits', 'kot_tickets'
 ];
 
 export async function downloadBackup() {

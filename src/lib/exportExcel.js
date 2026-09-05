@@ -13,11 +13,12 @@ async function fetchAll(table) {
 }
 
 export async function downloadExcel() {
-  const [bills, expenses, inventory, stockLog, vendors, vendorPurchases, vendorPayments, staff, salaryPayments, customers, menu] =
+  const [bills, expenses, inventory, stockLog, vendors, vendorPurchases, vendorPayments, staff, salaryPayments, customers, menu, customerCredit, dailyTips, cashAudits] =
     await Promise.all([
       fetchAll('bills'), fetchAll('expenses'), fetchAll('inventory'), fetchAll('stock_log'),
       fetchAll('vendors'), fetchAll('vendor_purchases'), fetchAll('vendor_payments'),
-      fetchAll('staff'), fetchAll('salary_payments'), fetchAll('customers'), fetchAll('menu')
+      fetchAll('staff'), fetchAll('salary_payments'), fetchAll('customers'), fetchAll('menu'),
+      fetchAll('customer_credit'), fetchAll('daily_tips'), fetchAll('cash_audits')
     ]);
 
   const wb = XLSX.utils.book_new();
@@ -80,14 +81,33 @@ export async function downloadExcel() {
     Date: p.date, Staff: p.staffName, Amount: p.amount, Note: p.note || ''
   }))), 'Salary Payments');
 
-  XLSX.utils.book_append_sheet(wb, sheetFrom(customers.map((c) => ({
-    Name: c.name, Phone: c.phone, Visits: c.visits, 'Total Spent': c.totalSpent, Points: c.points
-  }))), 'Customers');
+  XLSX.utils.book_append_sheet(wb, sheetFrom(customers.map((c) => {
+    const charged = customerCredit.filter((u) => u.customerId === c.id && u.type === 'charge').reduce((s, u) => s + u.amount, 0);
+    const settled = customerCredit.filter((u) => u.customerId === c.id && u.type === 'payment').reduce((s, u) => s + u.amount, 0);
+    return {
+      Name: c.name, Phone: c.phone, Visits: c.visits, 'Total Spent': c.totalSpent, Points: c.points,
+      'Udhar Balance': charged - settled
+    };
+  })), 'Customers');
+
+  XLSX.utils.book_append_sheet(wb, sheetFrom(customerCredit.map((u) => ({
+    Date: u.date, Customer: u.customerName, Type: u.type === 'charge' ? 'Udhar Diya' : 'Udhar Wasooli', Amount: u.amount, Note: u.note || ''
+  }))), 'Customer Udhar');
 
   XLSX.utils.book_append_sheet(wb, sheetFrom(menu.map((m) => ({
     Item: m.name, Category: m.category, Price: m.price, Cost: m.cost || 0,
-    'Margin %': m.price ? Math.round(((m.price - (m.cost || 0)) / m.price) * 100) : 0
+    'Margin %': m.price ? Math.round(((m.price - (m.cost || 0)) / m.price) * 100) : 0,
+    Type: m.veg === false ? 'Non-Veg' : 'Veg',
+    Status: m.available === false ? '86 - Out of Stock' : 'Available'
   }))), 'Menu');
+
+  XLSX.utils.book_append_sheet(wb, sheetFrom(dailyTips.map((t) => ({
+    Date: t.date, Amount: t.amount, Note: t.note || ''
+  }))), 'Daily Tips');
+
+  XLSX.utils.book_append_sheet(wb, sheetFrom(cashAudits.map((a) => ({
+    Date: a.date, 'Counted Cash': a.countedCash, Note: a.note || ''
+  }))), 'Cash Audits');
 
   XLSX.writeFile(wb, `restaurant-data-${todayStr()}.xlsx`);
 }

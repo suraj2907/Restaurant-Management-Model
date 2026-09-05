@@ -230,3 +230,89 @@ begin
     end;
   end loop;
 end $$;
+
+-- ============================================================
+-- v2 migration (Stitch redesign): veg tags, staff advances/tips,
+-- customer udhar (credit) khata, daily cash audit, Kitchen Display.
+-- Safe to re-run.
+-- ============================================================
+
+-- Menu: veg/non-veg tag + "86'd" (temporarily out of stock) toggle.
+alter table menu add column if not exists veg boolean not null default true;
+alter table menu add column if not exists available boolean not null default true;
+
+-- Staff: daily-wage ("dihadi") vs monthly, and advance/peshgi vs regular salary.
+alter table staff add column if not exists wage_type text not null default 'monthly';
+alter table salary_payments add column if not exists type text not null default 'salary';
+
+-- Reservations: advance/token deposit amount (waitlist itself just reuses status='waitlist').
+alter table reservations add column if not exists advance_amount numeric not null default 0;
+
+-- Customer credit ("udhar") ledger - same shape as loyalty_log/vendor_payments.
+create table if not exists customer_credit (
+  id text primary key,
+  customer_id text,
+  customer_name text,
+  date date,
+  type text, -- 'charge' (udhar diya) | 'payment' (udhar wasooli)
+  amount numeric,
+  note text
+);
+
+-- Daily tips pool collected at the counter, split among staff.
+create table if not exists daily_tips (
+  id text primary key,
+  date date,
+  amount numeric,
+  note text
+);
+
+-- End-of-day cash drawer count, to reconcile against expected cash sales.
+create table if not exists cash_audits (
+  id text primary key,
+  date date,
+  counted_cash numeric,
+  note text,
+  created_at bigint
+);
+
+-- Kitchen Display System: one row per fired KOT ticket, so a separate
+-- kitchen-facing screen can show live orders across devices in real time.
+create table if not exists kot_tickets (
+  id text primary key,
+  table_name text,
+  order_no int,
+  items jsonb,
+  status text, -- 'active' | 'ready' | 'served'
+  fired_at bigint
+);
+
+alter table customer_credit enable row level security;
+alter table daily_tips enable row level security;
+alter table cash_audits enable row level security;
+alter table kot_tickets enable row level security;
+
+do $$
+declare
+  t text;
+begin
+  for t in select unnest(array['customer_credit','daily_tips','cash_audits','kot_tickets'])
+  loop
+    execute format('drop policy if exists "public_all" on %I;', t);
+    execute format('create policy "public_all" on %I for all using (true) with check (true);', t);
+  end loop;
+end $$;
+
+do $$
+declare
+  t text;
+begin
+  for t in select unnest(array['customer_credit','daily_tips','cash_audits','kot_tickets'])
+  loop
+    begin
+      execute format('alter publication supabase_realtime add table %I;', t);
+    exception when duplicate_object then
+      null;
+    end;
+  end loop;
+end $$;

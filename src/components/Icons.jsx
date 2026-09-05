@@ -26,3 +26,32 @@ function IconBase({ name, className = 'w-4 h-4' }) {
 }
 
 export default memo(IconBase);
+
+// Standard Indian FSSAI-style veg/non-veg marker: a square outline with a
+// solid dot (veg) or triangle (non-veg) in the same color.
+function VegMarkBase({ veg = true, className = 'w-3.5 h-3.5' }) {
+  const color = veg ? '#15803D' : '#DC2626';
+  return (
+    <span
+      className={`inline-flex items-center justify-center shrink-0 border ${className}`}
+      style={{ borderColor: color }}
+      title={veg ? 'Veg' : 'Non-Veg'}
+    >
+      {veg ? (
+        <span className="rounded-full" style={{ width: '55%', height: '55%', background: color }} />
+      ) : (
+        <span
+          style={{
+            width: 0,
+            height: 0,
+            borderLeft: '0.28rem solid transparent',
+            borderRight: '0.28rem solid transparent',
+            borderBottom: `0.45rem solid ${color}`
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+export const VegMark = memo(VegMarkBase);

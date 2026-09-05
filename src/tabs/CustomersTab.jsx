@@ -5,13 +5,22 @@ import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
+function whatsappReminderLink(phone, name, amount) {
+  const digits = (phone || '').replace(/\D/g, '');
+  const number = digits.length === 10 ? `91${digits}` : digits;
+  const text = encodeURIComponent(`Namaste ${name || ''}, aapka ${rupee(amount)} udhar pending hai humare restaurant mein. Kripya jald settle kar dijiyega. Dhanyawad!`);
+  return `https://wa.me/${number}?text=${text}`;
+}
+
 export default function CustomersTab() {
   const [customers, setCustomers, customersLoaded] = useSupabaseTable('customers', []);
   const [loyaltyLog, setLoyaltyLog] = useSupabaseTable('loyalty_log', []);
+  const [credit, setCredit] = useSupabaseTable('customer_credit', []);
   const [bills] = useSupabaseTable('bills', []);
   const [adjustModal, setAdjustModal] = useState(null);
   const [historyModal, setHistoryModal] = useState(null);
   const [editCustomer, setEditCustomer] = useState(null);
+  const [udharModal, setUdharModal] = useState(null);
 
   function addCustomer(e) {
     e.preventDefault();
@@ -57,13 +66,34 @@ export default function CustomersTab() {
     setEditCustomer(null);
   }
 
+  function saveUdhar(e) {
+    e.preventDefault();
+    const f = e.target;
+    const type = f.type.value;
+    const amount = parseFloat(f.amount.value);
+    const note = f.note.value.trim();
+    if (!amount || amount <= 0) return;
+    setCredit([
+      ...credit,
+      { id: uid(), customerId: udharModal.id, customerName: udharModal.name || udharModal.phone, date: todayStr(), type, amount, note }
+    ]);
+    setUdharModal(null);
+  }
+
+  function udharBalance(customerId) {
+    const charged = credit.filter((u) => u.customerId === customerId && u.type === 'charge').reduce((s, u) => s + u.amount, 0);
+    const settled = credit.filter((u) => u.customerId === customerId && u.type === 'payment').reduce((s, u) => s + u.amount, 0);
+    return charged - settled;
+  }
+
   const sortedCustomers = useMemo(() => customers.slice().sort((a, b) => b.totalSpent - a.totalSpent), [customers]);
+  const customerRows = useMemo(() => sortedCustomers.map((c) => ({ ...c, udhar: udharBalance(c.id) })), [sortedCustomers, credit]);
 
   return (
     <section>
-      <h2 className="text-lg font-bold mb-3.5">Customers &amp; Loyalty</h2>
+      <h2 className="text-lg font-bold mb-3.5">Customers, Loyalty &amp; Udhar</h2>
       <p className="text-muted text-sm -mt-1 mb-3.5">
-        Billing tab mein customer ka phone number daalne se automatically visits, spend aur points (₹100 = 1 point) track ho jaate hain.
+        Billing tab mein customer ka phone number daalne se automatically visits, spend aur points (₹100 = 1 point) track ho jaate hain. Udhar khata yahan se manually log karein.
       </p>
       <form onSubmit={addCustomer} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Customer name" className="px-2.5 py-2 border border-border rounded-md text-sm" />
@@ -72,17 +102,35 @@ export default function CustomersTab() {
       </form>
 
       <TableScroll>
-        <DataTable columns={['Name', 'Phone', 'Visits', 'Total Spent', 'Points', 'Actions']}>
-          {!customersLoaded && <SkeletonRows rows={4} cols={6} />}
-          {customersLoaded && sortedCustomers.length === 0 && <EmptyRow span={6}>Koi customer add nahi kiya abhi.</EmptyRow>}
-          {customersLoaded && sortedCustomers.map((c) => (
+        <DataTable columns={['Name', 'Phone', 'Visits', 'Total Spent', 'Points', 'Udhar Due', 'Actions']}>
+          {!customersLoaded && <SkeletonRows rows={4} cols={7} />}
+          {customersLoaded && customerRows.length === 0 && <EmptyRow span={7}>Koi customer add nahi kiya abhi.</EmptyRow>}
+          {customersLoaded && customerRows.map((c) => (
               <tr key={c.id}>
                 <td className={td}>{c.name || <span className="text-muted italic">Unnamed</span>}</td>
                 <td className={td}>{c.phone}</td>
                 <td className={td}>{c.visits}</td>
                 <td className={td}>{rupee(c.totalSpent)}</td>
                 <td className={td}>{c.points}</td>
-                <td className={`${td} space-x-2`}>
+                <td className={td}>
+                  {c.udhar > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-bad/10 text-bad text-xs font-bold">{rupee(c.udhar)}</span>
+                  ) : '-'}
+                </td>
+                <td className={`${td} space-x-2 whitespace-nowrap`}>
+                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setUdharModal(c)}>
+                    Udhar
+                  </button>
+                  {c.udhar > 0 && c.phone && (
+                    <a
+                      href={whatsappReminderLink(c.phone, c.name, c.udhar)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-md text-xs font-semibold bg-good/10 text-good inline-block"
+                    >
+                      WhatsApp Reminder
+                    </a>
+                  )}
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setAdjustModal(c)}>
                     Adjust Points
                   </button>
@@ -100,6 +148,35 @@ export default function CustomersTab() {
             ))}
         </DataTable>
       </TableScroll>
+
+      <Modal open={!!udharModal} onClose={() => setUdharModal(null)} title={udharModal ? `Udhar Khata — ${udharModal.name || udharModal.phone}` : ''}>
+        {udharModal && (
+          <>
+            <p className="text-sm mb-3">Current balance: <strong className={udharBalance(udharModal.id) > 0 ? 'text-bad' : 'text-good'}>{rupee(udharBalance(udharModal.id))}</strong></p>
+            <form onSubmit={saveUdhar}>
+              <div className="flex flex-col gap-1 mb-3">
+                <label className="text-xs text-muted font-semibold">Type</label>
+                <select name="type" defaultValue="charge" className="px-2.5 py-2 border border-border rounded-md text-sm">
+                  <option value="charge">Udhar Diya (customer ne udhaar liya)</option>
+                  <option value="payment">Udhar Wasooli (customer ne chukaya)</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1 mb-3">
+                <label className="text-xs text-muted font-semibold">Amount</label>
+                <input name="amount" type="number" step="0.01" required className="px-2.5 py-2 border border-border rounded-md text-sm" />
+              </div>
+              <div className="flex flex-col gap-1 mb-3">
+                <label className="text-xs text-muted font-semibold">Note</label>
+                <input name="note" placeholder="e.g. Family dinner, bill unpaid" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+              </div>
+              <ModalActions>
+                <Btn variant="primary" type="submit">Save</Btn>
+                <Btn type="button" onClick={() => setUdharModal(null)}>Cancel</Btn>
+              </ModalActions>
+            </form>
+          </>
+        )}
+      </Modal>
 
       <Modal open={!!adjustModal} onClose={() => setAdjustModal(null)} title={adjustModal ? `Adjust Points — ${adjustModal.name || adjustModal.phone}` : ''}>
         <form onSubmit={saveAdjust}>
@@ -129,6 +206,7 @@ export default function CustomersTab() {
         {historyModal && (() => {
           const purchases = bills.filter((b) => b.customerId === historyModal.id).sort((a, b) => b.ts - a.ts);
           const pointsLog = loyaltyLog.filter((l) => l.customerId === historyModal.id).sort((a, b) => b.date.localeCompare(a.date));
+          const udharLog = credit.filter((u) => u.customerId === historyModal.id).sort((a, b) => b.date.localeCompare(a.date));
           return (
             <>
               <h4 className="font-semibold text-sm mb-2">Purchases</h4>
@@ -140,6 +218,20 @@ export default function CustomersTab() {
                       <td className={td}>{new Date(b.ts).toLocaleDateString('en-IN')}</td>
                       <td className={td}>{b.table}</td>
                       <td className={td}>{rupee(b.total)}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </TableScroll>
+              <h4 className="font-semibold text-sm mb-2 mt-4">Udhar Khata</h4>
+              <TableScroll>
+                <DataTable columns={['Date', 'Type', 'Amount', 'Note']}>
+                  {udharLog.length === 0 && <EmptyRow span={4}>Koi udhar activity nahi hai abhi.</EmptyRow>}
+                  {udharLog.map((u) => (
+                    <tr key={u.id}>
+                      <td className={td}>{u.date}</td>
+                      <td className={td}>{u.type === 'charge' ? 'Udhar Diya' : 'Udhar Wasooli'}</td>
+                      <td className={td}>{u.type === 'charge' ? '+' : '-'}{rupee(u.amount)}</td>
+                      <td className={td}>{u.note || '-'}</td>
                     </tr>
                   ))}
                 </DataTable>
