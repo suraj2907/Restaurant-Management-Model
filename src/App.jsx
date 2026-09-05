@@ -6,6 +6,7 @@ import ReportsTab from './tabs/ReportsTab.jsx';
 import InventoryTab from './tabs/InventoryTab.jsx';
 import ExpensesTab from './tabs/ExpensesTab.jsx';
 import StaffTab from './tabs/StaffTab.jsx';
+import VendorsTab from './tabs/VendorsTab.jsx';
 import CustomersTab from './tabs/CustomersTab.jsx';
 import MenuTab from './tabs/MenuTab.jsx';
 
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'inventory', label: 'Inventory' },
   { id: 'expenses', label: 'Expenses' },
   { id: 'staff', label: 'Staff' },
+  { id: 'vendors', label: 'Vendors' },
   { id: 'customers', label: 'Customers' },
   { id: 'menu', label: 'Menu Setup' }
 ];
@@ -62,6 +64,7 @@ export default function App() {
         {activeTab === 'inventory' && <InventoryTab />}
         {activeTab === 'expenses' && <ExpensesTab />}
         {activeTab === 'staff' && <StaffTab />}
+        {activeTab === 'vendors' && <VendorsTab />}
         {activeTab === 'customers' && <CustomersTab />}
         {activeTab === 'menu' && <MenuTab />}
       </main>

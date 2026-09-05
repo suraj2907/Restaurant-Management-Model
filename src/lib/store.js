@@ -55,6 +55,9 @@ export function seedIfEmpty() {
   store.set('rm_stock_log', []);
   store.set('rm_staff', []);
   store.set('rm_salary_payments', []);
+  store.set('rm_vendors', []);
+  store.set('rm_vendor_purchases', []);
+  store.set('rm_vendor_payments', []);
   store.set('rm_customers', []);
   store.set('rm_seeded', true);
 }
