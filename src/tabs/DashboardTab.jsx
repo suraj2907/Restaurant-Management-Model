@@ -49,7 +49,7 @@ export default function DashboardTab({ restaurantName, restaurantDetails }) {
   // Sales breakdowns (top items, category, table, captain, peak hours) -
   // moved here from Reports, which now holds the order-by-order ledger
   // instead. Shares this same range picker rather than duplicating one.
-  const { topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales } = useMemo(() => {
+  const { topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales, paymentSales } = useMemo(() => {
     const { start, end } = rangeBounds;
     const filtered = bills.filter((b) => b.ts >= start && b.ts <= end);
 
@@ -94,7 +94,16 @@ export default function DashboardTab({ restaurantName, restaurantDetails }) {
     });
     const tableSales = Object.values(tableMap).sort((a, b) => b.revenue - a.revenue);
 
-    return { topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales };
+    const paymentMap = {};
+    filtered.forEach((b) => {
+      const key = b.payment || 'Not specified';
+      if (!paymentMap[key]) paymentMap[key] = { mode: key, revenue: 0, bills: 0 };
+      paymentMap[key].revenue += b.total;
+      paymentMap[key].bills += 1;
+    });
+    const paymentSales = Object.values(paymentMap).sort((a, b) => b.revenue - a.revenue);
+
+    return { topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales, paymentSales };
   }, [bills, menu, rangeBounds]);
 
   // These reduce/sort/filter passes are cheap individually but bills/expenses
@@ -167,6 +176,21 @@ export default function DashboardTab({ restaurantName, restaurantDetails }) {
           <Card label="Expenses" value={rupee(stats.expTotal)} color="text-bad" />
           <Card label="Profit / Loss" value={rupee(stats.profit)} color={stats.profit >= 0 ? 'text-good' : 'text-bad'} />
           <Card label="Bills Generated" value={stats.billCount} />
+        </div>
+      )}
+
+      {paymentSales.length > 0 && (
+        <div className="bg-surface border border-border rounded-lg p-4 mb-6">
+          <h3 className="font-bold mt-0 mb-2.5">Sales by Payment Type</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {paymentSales.map((p) => (
+              <div key={p.mode} className="bg-well/60 border border-border rounded-lg p-3">
+                <span className="block text-xs text-muted uppercase tracking-wide">{p.mode}</span>
+                <span className="block text-lg font-bold text-ink">{rupee(p.revenue)}</span>
+                <span className="block text-xs text-muted">{p.bills} bill{p.bills === 1 ? '' : 's'}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
