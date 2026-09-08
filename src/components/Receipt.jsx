@@ -10,10 +10,17 @@ export function ReceiptContent({ bill, restaurantName, restaurantDetails }) {
       {restaurantDetails?.address && <div className="text-center text-xs text-muted">{restaurantDetails.address}</div>}
       {restaurantDetails?.phone && <div className="text-center text-xs text-muted">Ph: {restaurantDetails.phone}</div>}
       {restaurantDetails?.gstNumber && <div className="text-center text-xs text-muted">GSTIN: {restaurantDetails.gstNumber}</div>}
+      {restaurantDetails?.fssai && <div className="text-center text-xs text-muted">FSSAI Lic No: {restaurantDetails.fssai}</div>}
       <div className="text-center text-xs text-muted mb-2.5 mt-1">
         {bill.orderNo && <>Order #{bill.orderNo}<br /></>}
-        {dt.toLocaleString('en-IN')}<br />Table/Token: {bill.table}
+        {dt.toLocaleString('en-IN')}<br />Dine In: {bill.table}
+        {bill.billedBy && <><br />Cashier: {bill.billedBy}</>}
         {bill.staffName && <><br />Served by: {bill.staffName}</>}
+        {(bill.customerName || bill.customerPhone) && (
+          <><br />Customer: {[bill.customerName, bill.customerPhone].filter(Boolean).join(' - ')}</>
+        )}
+        {bill.guestName && <><br />Guest: {bill.guestName}</>}
+        {bill.guestCount ? <> {bill.guestName ? '' : <br />}({bill.guestCount} pax)</> : null}
       </div>
       <hr className="border-dashed my-2" />
       {bill.items.map((i, idx) => (
@@ -21,6 +28,18 @@ export function ReceiptContent({ bill, restaurantName, restaurantDetails }) {
       ))}
       <hr className="border-dashed my-2" />
       <div className="flex justify-between"><span>Subtotal</span><span>{rupee(bill.subtotal)}</span></div>
+      {bill.discount > 0 && (
+        <div className="flex justify-between text-bad"><span>Discount</span><span>-{rupee(bill.discount)}</span></div>
+      )}
+      {bill.deliveryCharge > 0 && (
+        <div className="flex justify-between"><span>Delivery Charge</span><span>{rupee(bill.deliveryCharge)}</span></div>
+      )}
+      {bill.containerCharge > 0 && (
+        <div className="flex justify-between"><span>Container Charge</span><span>{rupee(bill.containerCharge)}</span></div>
+      )}
+      {bill.serviceCharge > 0 && (
+        <div className="flex justify-between"><span>Service Charge</span><span>{rupee(bill.serviceCharge)}</span></div>
+      )}
       <div className="flex justify-between"><span>CGST ({halfPct}%)</span><span>{rupee(halfGst)}</span></div>
       <div className="flex justify-between"><span>SGST ({halfPct}%)</span><span>{rupee(halfGst)}</span></div>
       {bill.roundOff != null && Math.abs(bill.roundOff) > 0.001 && (
@@ -29,9 +48,16 @@ export function ReceiptContent({ bill, restaurantName, restaurantDetails }) {
       <div className="flex justify-between items-center font-bold text-base bg-accent text-white rounded-lg px-2.5 py-2 my-2">
         <span>Total</span><span>{rupee(bill.total)}</span>
       </div>
+      {bill.waivedOff > 0 && (
+        <>
+          <div className="flex justify-between text-bad"><span>Waived Off</span><span>-{rupee(bill.waivedOff)}</span></div>
+          <div className="flex justify-between font-bold"><span>Amount Collected</span><span>{rupee(bill.total - bill.waivedOff)}</span></div>
+        </>
+      )}
       <div className="flex justify-between"><span>Payment</span><span>{bill.payment}</span></div>
       <hr className="border-dashed my-2" />
       <div className="text-center text-xs text-muted">Thank you, visit again!</div>
+      {restaurantDetails?.googleReviewLink && <div className="text-center text-xs text-muted mt-1">Review us on Google</div>}
     </div>
   );
 }
@@ -45,16 +71,27 @@ export function downloadBill(bill, restaurantName, restaurantDetails) {
     ...(restaurantDetails?.address ? [restaurantDetails.address] : []),
     ...(restaurantDetails?.phone ? [`Ph: ${restaurantDetails.phone}`] : []),
     ...(restaurantDetails?.gstNumber ? [`GSTIN: ${restaurantDetails.gstNumber}`] : []),
+    ...(restaurantDetails?.fssai ? [`FSSAI Lic No: ${restaurantDetails.fssai}`] : []),
     ...(bill.orderNo ? [`Order #${bill.orderNo}`] : []),
     dt.toLocaleString('en-IN'),
-    `Table/Token: ${bill.table}`,
+    `Dine In: ${bill.table}`,
+    ...(bill.billedBy ? [`Cashier: ${bill.billedBy}`] : []),
+    ...((bill.customerName || bill.customerPhone) ? [`Customer: ${[bill.customerName, bill.customerPhone].filter(Boolean).join(' - ')}`] : []),
     '-'.repeat(32),
     ...bill.items.map((i) => `${i.name} x${i.qty}`.padEnd(24) + rupee(i.price * i.qty).padStart(8)),
     '-'.repeat(32),
     'Subtotal'.padEnd(24) + rupee(bill.subtotal).padStart(8),
+    ...(bill.discount > 0 ? ['Discount'.padEnd(24) + `-${rupee(bill.discount)}`.padStart(8)] : []),
+    ...(bill.deliveryCharge > 0 ? ['Delivery Charge'.padEnd(24) + rupee(bill.deliveryCharge).padStart(8)] : []),
+    ...(bill.containerCharge > 0 ? ['Container Charge'.padEnd(24) + rupee(bill.containerCharge).padStart(8)] : []),
+    ...(bill.serviceCharge > 0 ? ['Service Charge'.padEnd(24) + rupee(bill.serviceCharge).padStart(8)] : []),
     `CGST (${halfPct}%)`.padEnd(24) + rupee(halfGst).padStart(8),
     `SGST (${halfPct}%)`.padEnd(24) + rupee(halfGst).padStart(8),
     'Total'.padEnd(24) + rupee(bill.total).padStart(8),
+    ...(bill.waivedOff > 0 ? [
+      'Waived Off'.padEnd(24) + `-${rupee(bill.waivedOff)}`.padStart(8),
+      'Amount Collected'.padEnd(24) + rupee(bill.total - bill.waivedOff).padStart(8)
+    ] : []),
     `Payment: ${bill.payment}`,
     '-'.repeat(32),
     'Thank you, visit again!'

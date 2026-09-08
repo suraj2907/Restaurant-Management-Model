@@ -30,14 +30,8 @@ export function monthsElapsed(joinDate) {
 // 1 loyalty point per ₹100 spent.
 export const POINTS_PER_RUPEE = 100;
 
-// Only a few things stay device-local now: the list of table names, and
-// whichever order each table currently has "in progress" (not yet billed).
-// Everything else (menu, bills, staff, inventory, etc.) lives in Supabase -
-// see supabase-schema.sql for the seed data on that side.
-export function seedIfEmpty() {
-  if (store.get('rm_seeded', false)) return;
-  store.set('rm_tables', ['T1', 'T2', 'T3', 'T4', 'Parcel']);
-  store.set('rm_open_orders', {});
-  store.set('rm_kot_sent', {});
-  store.set('rm_seeded', true);
-}
+// KOT tickets show who fired them (name + this label) so kitchen/bar staff
+// know at a glance whether to flag an issue to the Captain on the floor or
+// straight to Admin.
+const ROLE_LABELS = { captain: 'Captain', admin: 'Admin', super_admin: 'Super Admin' };
+export const roleLabel = (role) => ROLE_LABELS[role] || role || '';

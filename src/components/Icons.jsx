@@ -14,7 +14,12 @@ const PATHS = {
   kitchen: 'M8 3v6M12 3v6M16 3v6M4 9h16M6 9v12h12V9M9 21v-5h6v5',
   audit: 'M4 4h16v16H4V4zm4 5h8M8 12h8M8 15h5M15 15l2 2 3-4',
   hamburger: 'M4 6h16M4 12h16M4 18h16',
-  close: 'M6 6l12 12M18 6L6 18'
+  close: 'M6 6l12 12M18 6L6 18',
+  users: 'M9 11a3 3 0 100-6 3 3 0 000 6zm7-1a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14c2.8.3 5 2.7 5 6',
+  permissions: 'M12 3l7 3v6c0 5-3 8.5-7 9.5-4-1-7-4.5-7-9.5V6l7-3zm-2.5 9l1.8 1.8L15 10.2',
+  logout: 'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9',
+  cart: 'M4 4h2l1.5 11h11L20 8H7.5M9 20a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z',
+  qr: 'M4 4h6v6H4V4zm2 2v2h2V6H6zm8-2h6v6h-6V4zm2 2v2h2V6h-2zM4 14h6v6H4v-6zm2 2v2h2v-2H6zm8 0h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 0h2v2h-2v-2zm0-8h2v2h-2v-2z'
 };
 
 function IconBase({ name, className = 'w-4 h-4' }) {

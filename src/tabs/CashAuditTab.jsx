@@ -24,19 +24,25 @@ export default function CashAuditTab() {
   const yesterdayBills = useMemo(() => bills.filter((b) => new Date(b.ts).toISOString().slice(0, 10) === shiftDate(date, -1)), [bills, date]);
   const dayExpenses = useMemo(() => expenses.filter((x) => x.date === date), [expenses, date]);
 
+  // "Gross Sales" stays the full official bill value (what GST/revenue
+  // reporting cares about); every cash-in-hand figure below nets out
+  // waivedOff instead, since that portion of the bill was never actually
+  // collected - counting it as cash would show a fake shortage later.
   const revenue = dayBills.reduce((s, b) => s + b.total, 0);
+  const waivedTotal = dayBills.reduce((s, b) => s + (b.waivedOff || 0), 0);
+  const netRevenue = revenue - waivedTotal;
   const yesterdayRevenue = yesterdayBills.reduce((s, b) => s + b.total, 0);
   const vsYesterdayPct = yesterdayRevenue > 0 ? ((revenue - yesterdayRevenue) / yesterdayRevenue) * 100 : null;
   const avgBill = dayBills.length ? revenue / dayBills.length : 0;
   const kharcha = dayExpenses.reduce((s, x) => s + x.amount, 0);
   const byPayment = useMemo(() => {
     const map = {};
-    for (const b of dayBills) map[b.payment] = (map[b.payment] || 0) + b.total;
+    for (const b of dayBills) map[b.payment] = (map[b.payment] || 0) + (b.total - (b.waivedOff || 0));
     return map;
   }, [dayBills]);
   const cashRevenue = byPayment.Cash || 0;
-  const pocketMargin = revenue - kharcha;
-  const marginPct = revenue > 0 ? (pocketMargin / revenue) * 100 : 0;
+  const pocketMargin = netRevenue - kharcha;
+  const marginPct = netRevenue > 0 ? (pocketMargin / netRevenue) * 100 : 0;
 
   const existingAudit = useMemo(() => audits.find((a) => a.date === date), [audits, date]);
   const openingCash = existingAudit?.openingCash || 0;
@@ -92,6 +98,7 @@ export default function CashAuditTab() {
     const lines = [
       `*Daily Hisaab — ${date}*`,
       `Gross Sales: ${rupee(revenue)} (${dayBills.length} bills)`,
+      ...(waivedTotal > 0 ? [`Waived Off: ${rupee(waivedTotal)}`] : []),
       `Kharcha: ${rupee(kharcha)}`,
       `Net In-Pocket Margin: ${rupee(pocketMargin)} (${marginPct.toFixed(1)}%)`,
       `Cash: ${rupee(byPayment.Cash || 0)} | UPI: ${rupee(byPayment.UPI || 0)} | Card: ${rupee(byPayment.Card || 0)}`,
@@ -127,6 +134,7 @@ export default function CashAuditTab() {
             )}
             {dayBills.length} bills • Avg {rupee(avgBill)}
           </span>
+          {waivedTotal > 0 && <span className="text-xs text-bad block mt-0.5">Waived off: -{rupee(waivedTotal)} (cash count mein nahi jodha)</span>}
         </div>
         <div className="bg-surface border border-border rounded-lg p-3.5">
           <span className="block text-[0.72rem] text-muted uppercase">Payment Mode Split</span>

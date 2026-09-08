@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
-import { dbInsert } from '../lib/db.js';
-import { uid, rupee, todayStr, monthsElapsed } from '../lib/store.js';
+import { dbInsert, dbUpdate, dbDelete } from '../lib/db.js';
+import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows, SkeletonCards } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
@@ -16,15 +16,50 @@ function presentDayCount(staffId, attendance) {
     .reduce((sum, a) => sum + (a.status === 'present' ? 1 : a.status === 'half-day' ? 0.5 : 0), 0);
 }
 
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+// Present days (half-day counts as 0.5) within one specific calendar month.
+function presentDaysInMonth(staffId, attendance, year, month) {
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+  return attendance
+    .filter((a) => a.staffId === staffId && a.date.startsWith(prefix))
+    .reduce((sum, a) => sum + (a.status === 'present' ? 1 : a.status === 'half-day' ? 0.5 : 0), 0);
+}
+
+// A monthly-salaried staffer's pay for one month is pro-rated by actual
+// attendance, not a flat guaranteed amount - salary / days-in-that-month
+// gives the per-day rate, multiplied by present days (absent/leave = 0).
+// Same underlying idea as dihadi wages, just derived from a monthly figure.
+function monthlyDue(s, attendance, year, month) {
+  const present = presentDaysInMonth(s.id, attendance, year, month);
+  const perDay = s.salary / daysInMonth(year, month);
+  return Math.round(present * perDay * 100) / 100;
+}
+
 function totalDueFor(s, attendance) {
-  return s.wageType === 'daily' ? s.salary * presentDayCount(s.id, attendance) : s.salary * monthsElapsed(s.joinDate || todayStr());
+  if (s.wageType === 'daily') return s.salary * presentDayCount(s.id, attendance);
+  const start = new Date((s.joinDate || todayStr()) + 'T00:00:00');
+  const now = new Date();
+  let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+  let total = 0;
+  while (cursor <= end) {
+    total += monthlyDue(s, attendance, cursor.getFullYear(), cursor.getMonth());
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return total;
 }
 
 // Builds a month-by-month salary ledger for one staff member: each month's
-// due carries forward any unpaid balance from the month before (so "pichle
-// mahine ka bacha hua" shows up added into the new month's payable amount),
-// and total payments are allocated oldest-month-first.
-function monthlyLedger(s, payments) {
+// due is that month's attendance-based pay, carrying forward any unpaid
+// balance from the month before (so "pichle mahine ka bacha hua" shows up
+// added into the new month's payable amount) - total payments are
+// allocated oldest-month-first. This is how the payroll cycle actually
+// advances: a new calendar month just adds one more row here, seeded with
+// whatever balance the previous month left behind.
+function monthlyLedger(s, payments, attendance) {
   const paidTotal = payments.filter((p) => p.staffId === s.id).reduce((sum, p) => sum + p.amount, 0);
   let paidPool = paidTotal;
 
@@ -36,13 +71,18 @@ function monthlyLedger(s, payments) {
   const months = [];
   let carry = 0;
   while (cursor <= end) {
-    const due = s.salary;
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const presentDays = presentDaysInMonth(s.id, attendance, year, month);
+    const due = monthlyDue(s, attendance, year, month);
     const payable = carry + due;
     const paidNow = Math.min(paidPool, payable);
     paidPool -= paidNow;
     const balance = payable - paidNow;
     months.push({
       label: cursor.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }),
+      presentDays,
+      totalDays: daysInMonth(year, month),
       due,
       carry,
       payable,
@@ -50,7 +90,7 @@ function monthlyLedger(s, payments) {
       balance
     });
     carry = balance;
-    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    cursor = new Date(year, month + 1, 1);
   }
   return months.reverse();
 }
@@ -128,15 +168,19 @@ export default function StaffTab() {
     const type = f.type.value;
     if (!amount || amount <= 0) return;
 
-    setPayments([...payments, { id: uid(), staffId: payModal.id, staffName: payModal.name, date, amount, note, type }]);
+    // Same id used for the payment row and the expense it logs, so editing
+    // or removing this payment later can find and update/delete its exact
+    // matching expense entry instead of leaving it orphaned in Cash Audit.
+    const paymentId = uid();
+    setPayments([...payments, { id: paymentId, staffId: payModal.id, staffName: payModal.name, date, amount, note, type }]);
 
     const label = type === 'advance' ? 'Advance/peshgi paid to' : 'Salary paid to';
-    await dbInsert('expenses', { id: uid(), date, category: 'Staff Salary', note: `${label} ${payModal.name}${note ? ' - ' + note : ''}`, amount });
+    await dbInsert('expenses', { id: paymentId, date, category: 'Staff Salary', note: `${label} ${payModal.name}${note ? ' - ' + note : ''}`, amount });
 
     setPayModal(null);
   }
 
-  function saveEditPayment(e) {
+  async function saveEditPayment(e) {
     e.preventDefault();
     const f = e.target;
     const amount = parseFloat(f.amount.value);
@@ -145,11 +189,16 @@ export default function StaffTab() {
     const type = f.type.value;
     if (!amount || amount <= 0) return;
     setPayments(payments.map((p) => (p.id === editPayment.id ? { ...p, date, amount, note, type } : p)));
+
+    const label = type === 'advance' ? 'Advance/peshgi paid to' : 'Salary paid to';
+    await dbUpdate('expenses', editPayment.id, { date, note: `${label} ${editPayment.staffName}${note ? ' - ' + note : ''}`, amount });
+
     setEditPayment(null);
   }
 
-  function confirmRemovePayment() {
+  async function confirmRemovePayment() {
     setPayments(payments.filter((p) => p.id !== removePaymentTarget.id));
+    await dbDelete('expenses', removePaymentTarget.id);
     setRemovePaymentTarget(null);
   }
 
@@ -160,8 +209,9 @@ export default function StaffTab() {
     const amount = parseFloat(f.amount.value);
     if (!staffMember || !amount || amount <= 0) return;
     const date = todayStr();
-    setPayments([...payments, { id: uid(), staffId: staffMember.id, staffName: staffMember.name, date, amount, note: 'Quick cash advance', type: 'advance' }]);
-    await dbInsert('expenses', { id: uid(), date, category: 'Staff Salary', note: `Advance/peshgi paid to ${staffMember.name} - Quick cash advance`, amount });
+    const paymentId = uid();
+    setPayments([...payments, { id: paymentId, staffId: staffMember.id, staffName: staffMember.name, date, amount, note: 'Quick cash advance', type: 'advance' }]);
+    await dbInsert('expenses', { id: paymentId, date, category: 'Staff Salary', note: `Advance/peshgi paid to ${staffMember.name} - Quick cash advance`, amount });
     f.reset();
   }
 
@@ -343,6 +393,7 @@ export default function StaffTab() {
                         </button>
                       ))}
                     </div>
+                    <span className="block text-[0.65rem] text-muted mt-1">{s.presentDays} din is mahine</span>
                   </td>
                   <td className={td}>
                     {rupee(s.salary)}{s.wageType === 'daily' ? '/din' : '/mo'}
@@ -407,6 +458,7 @@ export default function StaffTab() {
                   </button>
                 ))}
               </div>
+              <span className="text-[0.68rem] text-muted -mt-1.5">{s.presentDays} din present is mahine</span>
 
               {todayStatus === 'absent' && s.phone && (
                 <a href={`tel:${s.phone}`} className="text-center py-2 rounded-md text-xs font-semibold bg-bad text-white">
@@ -458,7 +510,7 @@ export default function StaffTab() {
 
       <h2 className="text-lg font-bold mt-6 mb-3.5">Recent Salary Payments (all staff)</h2>
       <p className="text-muted text-xs -mt-2 mb-3.5">
-        Note: payment edit/remove yahan sirf is log ko theek karta hai — usse auto-bani Expenses entry alag se update nahi hoti, wo Expenses tab mein manually theek kar sakte hain.
+        Payment edit/remove yahan Expenses tab mein bani entry ko bhi automatically update/remove kar deta hai.
       </p>
       <TableScroll>
         <DataTable columns={['Date', 'Staff', 'Type', 'Amount', 'Note', 'Actions']}>
@@ -573,12 +625,13 @@ export default function StaffTab() {
 
               {!isDaily && (
                 <>
-                  <h4 className="font-semibold text-sm mb-2">Monthly Salary (pichle mahine ka pending naye mahine mein add hota hai)</h4>
+                  <h4 className="font-semibold text-sm mb-2">Monthly Salary (attendance ke hisaab se — pichle mahine ka pending naye mahine mein add hota hai)</h4>
                   <TableScroll>
-                    <DataTable columns={['Month', 'Salary Due', 'Carried Forward', 'Total Payable', 'Paid', 'Balance']}>
-                      {monthlyLedger(historyModal, payments).map((m) => (
+                    <DataTable columns={['Month', 'Present Days', 'Salary Due', 'Carried Forward', 'Total Payable', 'Paid', 'Balance']}>
+                      {monthlyLedger(historyModal, payments, attendance).map((m) => (
                         <tr key={m.label}>
                           <td className={td}>{m.label}</td>
+                          <td className={td}>{m.presentDays} / {m.totalDays}</td>
                           <td className={td}>{rupee(m.due)}</td>
                           <td className={td}>{m.carry > 0 ? rupee(m.carry) : '-'}</td>
                           <td className={td}>{rupee(m.payable)}</td>

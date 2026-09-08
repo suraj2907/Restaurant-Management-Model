@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
+import { dbInsert } from '../lib/db.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonCards } from '../components/Skeleton.jsx';
@@ -48,7 +49,7 @@ export default function VendorsTab() {
     setEditVendor(null);
   }
 
-  function savePayment(e) {
+  async function savePayment(e) {
     e.preventDefault();
     const f = e.target;
     const amount = parseFloat(f.amount.value);
@@ -56,6 +57,11 @@ export default function VendorsTab() {
     const note = f.note.value.trim();
     if (!amount || amount <= 0) return;
     setPayments([...payments, { id: uid(), vendorId: payModal.id, vendorName: payModal.name, date, amount, note }]);
+    // Same as Staff Salary payments - a vendor payment is real cash out of
+    // the drawer, so it needs to land in Expenses too (Cash Audit's
+    // "Direct Kharcha" and Dashboard's Expense stat both read that table,
+    // not vendor_payments).
+    await dbInsert('expenses', { id: uid(), date, category: 'Vendor Payment', note: `Paid to ${payModal.name}${note ? ' - ' + note : ''}`, amount });
     setPayModal(null);
   }
 

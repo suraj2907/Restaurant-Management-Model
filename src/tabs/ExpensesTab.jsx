@@ -58,7 +58,7 @@ export default function ExpensesTab() {
         <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Expense</button>
       </form>
       <p className="text-muted text-sm -mt-2 mb-3.5">
-        Staff salary payments and vendor purchases (via Inventory Stock-In) are logged from their own tabs and appear here automatically.
+        Staff salary payments, vendor payments, aur vendor purchases (via Inventory Stock-In) apne-apne tabs se log ho kar yahan automatically aa jaate hain.
       </p>
 
       <TableScroll>

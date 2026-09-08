@@ -9,6 +9,16 @@ export async function dbInsert(table, row) {
   if (error) console.error(`[${table}] insert failed:`, error.message, row);
 }
 
+export async function dbUpdate(table, id, patch) {
+  const { error } = await supabase.from(table).update(toSnake(patch)).eq('id', id);
+  if (error) console.error(`[${table}] update failed:`, error.message, id, patch);
+}
+
+export async function dbDelete(table, id) {
+  const { error } = await supabase.from(table).delete().eq('id', id);
+  if (error) console.error(`[${table}] delete failed:`, error.message, id);
+}
+
 export async function getSetting(key, fallback) {
   const { data } = await supabase.from('settings').select('value').eq('key', key).maybeSingle();
   return data ? data.value : fallback;
