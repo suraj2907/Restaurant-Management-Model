@@ -66,18 +66,6 @@ export default function CheckItemsView({ table, tableState, kotTickets, restaura
           ))}
         </div>
 
-        {data.cancelledItems.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-bold text-bad uppercase mb-1.5">Cancelled</div>
-            {data.cancelledItems.map((i) => (
-              <div key={i.name} className="flex items-center justify-between py-1 text-bad">
-                <span>{i.name}</span>
-                <span className="font-bold">x{i.qty}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="flex items-center gap-4 text-xs text-muted bg-well/60 rounded-lg px-3 py-2 mb-2">
           <span>KOTs: <b className="text-ink">{data.kotCount}</b></span>
           <span>Total Qty: <b className="text-ink">{data.totalQty}</b></span>

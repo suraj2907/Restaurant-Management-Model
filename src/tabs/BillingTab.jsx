@@ -785,6 +785,19 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
                   >
                     <Icon name="eye" className="w-3.5 h-3.5" />
                   </button>
+                  {/* Check Items is Admin/Super Admin only - Captain never
+                      sees this icon (not just hidden inside the table). */}
+                  {!restricted && (
+                    <button
+                      title="Check Items" aria-label="Check Items"
+                      onClick={(e) => { e.stopPropagation(); setCheckItemsFor(t); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className={`w-6 h-6 flex items-center justify-center rounded-md ${isActive ? 'bg-white/20 text-white' : 'bg-bg border border-border text-muted'}`}
+                    >
+                      <Icon name="checklist" className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     title="Print Running Bill" aria-label="Print Running Bill"
                     onClick={(e) => { e.stopPropagation(); printRunningBillFromGrid(t); }}
