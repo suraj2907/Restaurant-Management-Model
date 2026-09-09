@@ -63,7 +63,12 @@ export default function ReservationsTab({ restaurantName, restaurantDetails }) {
   function ensureCustomer(name, phone) {
     const clean = (phone || '').trim();
     if (!clean) return;
-    supabase.rpc('register_customer', { p_name: name, p_phone: clean });
+    // supabase-js's .rpc() builder only implements .then() (not .catch()/
+    // .finally() - calling .catch() on it throws "not a function") and,
+    // being a thenable rather than a real promise, never actually sends the
+    // request unless something calls .then() on it. This is what fires it.
+    supabase.rpc('register_customer', { p_name: name, p_phone: clean })
+      .then(null, (err) => console.error('register_customer failed:', err));
   }
 
   function addReservation(e) {

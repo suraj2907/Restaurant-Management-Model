@@ -446,7 +446,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
       // A SECURITY DEFINER RPC (not a direct customers upsert) - a Captain
       // has billing write by default but often not the `customers`
       // resource, so a plain write here would silently fail under RLS.
-      if (phone) supabase.rpc('register_customer', { p_name: name, p_phone: phone });
+      // .rpc() only implements .then() (not .catch()) and, being a
+      // thenable rather than a real promise, never actually sends the
+      // request unless something calls .then() on it.
+      if (phone) {
+        supabase.rpc('register_customer', { p_name: name, p_phone: phone })
+          .then(null, (err) => console.error('register_customer failed:', err));
+      }
     }
     setCustomerPromptFor(null);
   }
