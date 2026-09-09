@@ -113,7 +113,7 @@ export function buildBill({ bill, isReprint }) {
 // Running bill - a live, not-yet-final total for a table still open.
 // Must never be confused with the final paid invoice from buildBill(),
 // hence the explicit "NOT A FINAL PAID BILL" marker on the slip itself.
-export function buildRunningBill({ table, customerName, customerPhone, guestCount, items, subtotal, gstPct, gst, total, printedAt }) {
+export function buildRunningBill({ table, customerName, customerPhone, guestCount, items, subtotal, discount, gstPct, gst, deliveryCharge, containerCharge, serviceCharge, total, printedAt }) {
   const chunks = [INIT, ALIGN_CENTER, BOLD_ON, line('RUNNING BILL'), BOLD_OFF, divider(), ALIGN_LEFT];
 
   chunks.push(line(`TABLE: ${table || ''}`));
@@ -129,7 +129,11 @@ export function buildRunningBill({ table, customerName, customerPhone, guestCoun
   chunks.push(divider());
 
   chunks.push(twoCol('Subtotal', Number(subtotal || 0).toFixed(2)));
+  if (discount > 0) chunks.push(twoCol('Discount', `-${Number(discount).toFixed(2)}`));
   chunks.push(twoCol(`GST (${gstPct || 5}%)`, Number(gst || 0).toFixed(2)));
+  if (deliveryCharge > 0) chunks.push(twoCol('Delivery Charge', Number(deliveryCharge).toFixed(2)));
+  if (containerCharge > 0) chunks.push(twoCol('Container Charge', Number(containerCharge).toFixed(2)));
+  if (serviceCharge > 0) chunks.push(twoCol('Service Charge', Number(serviceCharge).toFixed(2)));
   chunks.push(divider(), BOLD_ON, twoCol('RUNNING TOTAL', Number(total || 0).toFixed(2)), BOLD_OFF, divider());
 
   chunks.push(ALIGN_CENTER, line('*** NOT A FINAL PAID BILL ***'));
@@ -141,8 +145,10 @@ export function buildRunningBill({ table, customerName, customerPhone, guestCoun
 // Check Items - read-only order-verification slip for a customer
 // cross-check, never a bill (no prices shown at all, matching how
 // CheckItemsView.jsx presents it on screen).
-export function buildCheckItems({ table, customerName, customerPhone, guestCount, items, totalQty, printedAt }) {
-  const chunks = [INIT, ALIGN_CENTER, BOLD_ON, line('CHECK ITEMS'), BOLD_OFF, divider(), ALIGN_LEFT];
+export function buildCheckItems({ restaurantName, table, customerName, customerPhone, guestCount, items, unsentItems, totalQty, printedBy, printedAt }) {
+  const chunks = [INIT, ALIGN_CENTER, BOLD_ON, line('CHECK ITEMS'), BOLD_OFF];
+  if (restaurantName) chunks.push(line(restaurantName));
+  chunks.push(divider(), ALIGN_LEFT);
 
   chunks.push(line(`TABLE: ${table || ''}`));
   chunks.push(line(`CUSTOMER: ${customerName || 'Walk-in'}`));
@@ -151,15 +157,25 @@ export function buildCheckItems({ table, customerName, customerPhone, guestCount
   chunks.push(line(printedAt ? new Date(printedAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN')));
   chunks.push(divider());
 
-  chunks.push(twoCol('ITEM', 'QTY'));
+  chunks.push(BOLD_ON, line('SENT ITEMS'), BOLD_OFF);
   for (const item of items || []) {
     chunks.push(twoCol(item.name, `x${item.qty}`));
   }
   chunks.push(divider());
-
   chunks.push(BOLD_ON, line(`TOTAL QTY: ${totalQty ?? (items || []).reduce((s, i) => s + i.qty, 0)}`), BOLD_OFF);
+
+  if (unsentItems && unsentItems.length > 0) {
+    chunks.push(divider());
+    chunks.push(BOLD_ON, line('NOT YET SENT'), BOLD_OFF);
+    for (const item of unsentItems) {
+      chunks.push(twoCol(item.name, `x${item.qty}`));
+    }
+  }
+
+  chunks.push(divider());
+  if (printedBy) chunks.push(line(`Printed By: ${printedBy}`));
   chunks.push(ALIGN_CENTER, line('*** CUSTOMER ORDER CHECK ***'));
-  chunks.push(divider(), FEED(3), CUT);
+  chunks.push(FEED(3), CUT);
   return Buffer.concat(chunks);
 }
 

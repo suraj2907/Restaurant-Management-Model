@@ -572,8 +572,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     if (items.length === 0) return;
     const gstApplicable = items.reduce((s, o) => s + (o.gstIncluded !== false ? o.price * o.qty : 0), 0);
     const nonGstSubtotal = items.reduce((s, o) => s + o.price * o.qty, 0) - gstApplicable;
-    const gst = gstApplicable * 0.05;
+    // Discount is Admin/Super-Admin only, same as the Eye view and the
+    // main bill total - a Captain's direct grid print never applies it.
+    const discount = restricted ? 0 : Math.min(st?.discount || 0, gstApplicable);
+    const taxableAmount = gstApplicable - discount;
+    const gst = taxableAmount * 0.05;
     const subtotal = gstApplicable + nonGstSubtotal;
+    const charges = (st?.deliveryCharge || 0) + (st?.containerCharge || 0) + (st?.serviceCharge || 0);
     try {
       await enqueueRunningBillPrintJob({
         table: t,
@@ -581,7 +586,8 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
           type: 'running_bill', table: t,
           customerName: st?.customerName || null, customerPhone: st?.customerPhone || null, guestCount: st?.guestCount || null,
           items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
-          subtotal, gstPct: 5, gst, total: subtotal + gst + (st?.deliveryCharge || 0) + (st?.containerCharge || 0) + (st?.serviceCharge || 0),
+          subtotal, discount, gstPct: 5, gst, total: taxableAmount + gst + nonGstSubtotal + charges,
+          deliveryCharge: st?.deliveryCharge || 0, containerCharge: st?.containerCharge || 0, serviceCharge: st?.serviceCharge || 0,
           printedAt: new Date().toISOString(), isReprint: false
         }
       });
@@ -897,9 +903,15 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
                         <span className="text-sm font-semibold">{rupee(sentTotal)} • {activeKotCountForTable} KOT{activeKotCountForTable === 1 ? '' : 's'} sent</span>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
-                        <button onClick={() => setCheckItemsFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">
-                          Check Items
-                        </button>
+                        {/* Check Items is Admin/Super Admin only (view AND
+                            print) - hidden entirely for Captain, not just
+                            the print step. Running Bill stays available to
+                            everyone, including Captain. */}
+                        {!restricted && (
+                          <button onClick={() => setCheckItemsFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">
+                            Check Items
+                          </button>
+                        )}
                         <button onClick={() => setRunningBillFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">
                           Running Bill
                         </button>
@@ -1254,11 +1266,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
         />
       )}
 
-      {checkItemsFor && (
+      {checkItemsFor && !restricted && (
         <CheckItemsView
           table={checkItemsFor}
           tableState={stateFor(checkItemsFor)}
           kotTickets={kotTickets}
+          restaurantName={restaurantName}
+          printedBy={billerName}
           onClose={() => setCheckItemsFor(null)}
         />
       )}

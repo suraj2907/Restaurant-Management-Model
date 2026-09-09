@@ -207,10 +207,12 @@ export default function ReportsTab({ restaurantName, restaurantDetails, profile 
         </TableScroll>
       </div>
 
+      {/* View is read-only - no print button here. Printing a bill (first
+          time or again) always goes through the password-gated Reprint
+          flow below, never a plain window.print() shortcut out of View. */}
       <Modal open={!!viewing} onClose={() => setViewing(null)} printArea>
         {viewing && <ReceiptContent bill={viewing} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
         <ModalActions>
-          <Btn variant="primary" onClick={() => window.print()}>Print (Browser)</Btn>
           <Btn onClick={() => viewing && downloadBill(viewing, restaurantName, restaurantDetails)}>Download</Btn>
           <Btn onClick={() => setViewing(null)}>Close</Btn>
         </ModalActions>

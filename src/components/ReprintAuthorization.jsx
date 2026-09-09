@@ -4,7 +4,7 @@ import { verifyAdminReprintPassword } from '../lib/reprintAuth.js';
 // Inline (never a browser prompt/new window/separate page) admin-password
 // check that gates every KOT/bill reprint. Renders as a compact row meant
 // to sit inside the same card as the "Reprint" button that opened it.
-export default function ReprintAuthorization({ open, title, onCancel, onAuthorized }) {
+export default function ReprintAuthorization({ open, title, onCancel, onAuthorized, confirmLabel = 'Verify & Reprint' }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,9 +29,14 @@ export default function ReprintAuthorization({ open, title, onCancel, onAuthoriz
         setBusy(false);
         return;
       }
+      const verifiedPassword = password;
       setPassword('');
       setBusy(false);
-      onAuthorized();
+      // Passes the verified password through so a caller that needs it for
+      // its own follow-up password-gated RPC (e.g. Check Items print) can
+      // reuse it - existing zero-arg callers (KOT/bill reprint) just ignore
+      // this extra argument.
+      onAuthorized(verifiedPassword);
     } catch (err) {
       setError(err.message || 'Verification failed.');
       setBusy(false);
@@ -62,7 +67,7 @@ export default function ReprintAuthorization({ open, title, onCancel, onAuthoriz
           disabled={busy || !password}
           className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bad text-white hover:opacity-90 disabled:opacity-50"
         >
-          {busy ? 'Verifying...' : 'Verify & Reprint'}
+          {busy ? 'Verifying...' : confirmLabel}
         </button>
         <button onClick={cancel} disabled={busy} className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border disabled:opacity-50">
           Cancel

@@ -1452,4 +1452,53 @@ $$;
 revoke all on function enqueue_print_job(text, text, text, text, jsonb, boolean, text, integer, text) from public;
 grant execute on function enqueue_print_job(text, text, text, text, jsonb, boolean, text, integer, text) to authenticated;
 
+-- ============================================================
+-- Addendum: Check Items print is Admin/Super Admin only AND requires the
+-- same shared admin password used for KOT/bill reprint (admin_reprint_
+-- security) - unlike a reprint though, print_history.is_reprint stays
+-- false here, since this is a normal operational print (staff verifying
+-- an order with a customer), not a reprint of an already-printed
+-- document. Role check + password check both happen inside this one
+-- SECURITY DEFINER call (reusing verify_admin_reprint_password rather
+-- than duplicating the crypt() check), and station/printer are hardcoded
+-- rather than accepted as parameters, so a Captain - or anyone without
+-- the password - can never queue this job even via a direct RPC call
+-- from the browser console.
+-- ============================================================
+create or replace function enqueue_check_items_job(
+  p_password text,
+  p_reference_id text,
+  p_payload jsonb,
+  p_table_name text default null
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job_id text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if my_role() not in ('admin', 'super_admin') then
+    raise exception 'Only Admin/Super Admin can print Check Items';
+  end if;
+
+  if not verify_admin_reprint_password(p_password) then
+    raise exception 'Invalid admin password';
+  end if;
+
+  v_job_id := gen_random_uuid()::text;
+
+  insert into print_jobs (id, reference_id, print_type, station, printer_id, payload)
+  values (v_job_id, p_reference_id, 'check_items', 'bistro_bill', 'printer-dcr3', p_payload);
+
+  insert into print_history (id, job_id, reference_id, print_type, station, table_name, printed_by, is_reprint, printer_id, status)
+  values (gen_random_uuid()::text, v_job_id, p_reference_id, 'check_items', 'bistro_bill', p_table_name, auth.uid(), false, 'printer-dcr3', 'queued');
+
+  return v_job_id;
+end;
+$$;
+revoke all on function enqueue_check_items_job(text, text, jsonb, text) from public;
+grant execute on function enqueue_check_items_job(text, text, jsonb, text) to authenticated;
+
 notify pgrst, 'reload schema';

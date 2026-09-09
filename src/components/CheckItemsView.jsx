@@ -1,34 +1,46 @@
 import { useMemo, useState } from 'react';
 import { getCheckItemsData } from '../lib/checkItems.js';
-import { enqueueCheckItemsPrintJob } from '../lib/printJobs.js';
+import { enqueueSecureCheckItemsPrintJob } from '../lib/printJobs.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
+import ReprintAuthorization from './ReprintAuthorization.jsx';
 
 // Read-only order-verification screen ("bhai aapke table par ye 2 Paneer,
 // 3 Cold Coffee gaye hain") - never changes qty/price, never deletes,
 // never fires a KOT. Sourced from kot_tickets (the permanent record of
 // what actually went to the kitchen/bar), not table_state alone, so a
-// "not yet sent" item never gets miscounted as delivered.
-export default function CheckItemsView({ table, tableState, kotTickets, onClose }) {
+// "not yet sent" item never gets miscounted as delivered. Check Items
+// itself is Admin/Super Admin only (gated by the caller not even opening
+// this view for a Captain) - printing it additionally requires the shared
+// admin password, verified again server-side inside
+// enqueue_check_items_job so a Captain can never queue this print even via
+// a direct RPC call.
+export default function CheckItemsView({ table, tableState, kotTickets, restaurantName, printedBy, onClose }) {
   const [showKots, setShowKots] = useState(false);
   const [printStatus, setPrintStatus] = useState(null);
   const [printing, setPrinting] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
 
   const data = useMemo(() => getCheckItemsData({ tableState, kotTickets, table }), [tableState, kotTickets, table]);
 
-  async function printCheckItems() {
+  async function printCheckItems(password) {
+    setAuthOpen(false);
     setPrinting(true);
     setPrintStatus(null);
     try {
-      await enqueueCheckItemsPrintJob({
+      await enqueueSecureCheckItemsPrintJob({
         table,
+        password,
         payload: {
           type: 'check_items',
+          restaurantName: restaurantName || null,
           table,
           customerName: data.customerName,
           customerPhone: data.customerPhone,
           guestCount: data.guestCount,
           items: data.sentItems,
           totalQty: data.totalSentQty,
+          unsentItems: data.unsentItems,
+          printedBy: printedBy || null,
           printedAt: new Date().toISOString()
         }
       });
@@ -113,9 +125,19 @@ export default function CheckItemsView({ table, tableState, kotTickets, onClose 
         {printStatus && (
           <p className={`text-xs font-semibold ${printStatus.ok ? 'text-good' : 'text-bad'}`}>{printStatus.ok ? '✓ ' : '⚠ '}{printStatus.message}</p>
         )}
+
+        {authOpen && (
+          <ReprintAuthorization
+            open
+            title={`Print Check Items — ${table}`}
+            confirmLabel="Verify & Print"
+            onCancel={() => setAuthOpen(false)}
+            onAuthorized={printCheckItems}
+          />
+        )}
       </div>
       <ModalActions>
-        <Btn variant="primary" onClick={printCheckItems} disabled={printing}>{printing ? 'Queueing...' : 'Print Check Items'}</Btn>
+        <Btn variant="primary" onClick={() => setAuthOpen(true)} disabled={printing || authOpen}>{printing ? 'Queueing...' : 'Print Check Items'}</Btn>
         <Btn onClick={onClose}>Close</Btn>
       </ModalActions>
     </Modal>

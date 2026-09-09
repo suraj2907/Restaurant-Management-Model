@@ -329,10 +329,12 @@ export default function DashboardTab({ restaurantName, restaurantDetails }) {
         </div>
       </div>
 
+      {/* Click-to-view is read-only - no print button here. A real reprint
+          needs the password-gated flow on the Reports tab, not a plain
+          window.print() shortcut straight off a Recent Bills row. */}
       <Modal open={!!receipt} onClose={() => setReceipt(null)} printArea>
         {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
         <ModalActions>
-          <Btn variant="primary" onClick={() => window.print()}>Reprint</Btn>
           <Btn onClick={() => receipt && downloadBill(receipt.bill, restaurantName, restaurantDetails)}>Download</Btn>
           <Btn onClick={() => setReceipt(null)}>Close</Btn>
         </ModalActions>

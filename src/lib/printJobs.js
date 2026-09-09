@@ -40,16 +40,20 @@ export async function enqueueRunningBillPrintJob({ table, payload }) {
   });
 }
 
-export async function enqueueCheckItemsPrintJob({ table, payload }) {
-  return enqueueNormalPrintJob({
-    referenceId: `check-${table}-${Date.now()}`,
-    printType: 'check_items',
-    station: 'bistro_bill',
-    printerId: PRINTER_DCR3,
-    payload,
-    tableName: table,
-    idempotencyKey: null
+// Check Items print is Admin/Super Admin only AND password-gated (unlike
+// Running Bill) - the role check and password verification both happen
+// inside enqueue_check_items_job() itself, so this can never be called
+// successfully by a Captain even via a direct RPC call from the browser
+// console. Station/printer are hardcoded server-side, not accepted here.
+export async function enqueueSecureCheckItemsPrintJob({ table, payload, password }) {
+  const { data, error } = await supabase.rpc('enqueue_check_items_job', {
+    p_password: password,
+    p_reference_id: `check-${table}-${Date.now()}`,
+    p_payload: payload,
+    p_table_name: table
   });
+  if (error) throw error;
+  return data;
 }
 
 // Reprint - admin/super_admin only, enforced inside the RPC itself (there

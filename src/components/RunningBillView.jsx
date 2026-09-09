@@ -17,7 +17,7 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
   const [printStatus, setPrintStatus] = useState(null);
   const [printing, setPrinting] = useState(false);
 
-  const { sentRows, unsentRows, subtotal, gstApplicable, nonGstSubtotal, gst, total, kotCount } = useMemo(() => {
+  const { sentRows, unsentRows, subtotal, gstApplicable, nonGstSubtotal, discount, gst, total, kotCount } = useMemo(() => {
     const items = tableState?.items || [];
     const kotSent = tableState?.kotSent || {};
     const sentRows = items
@@ -29,11 +29,16 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
     const subtotal = items.reduce((s, o) => s + o.price * o.qty, 0);
     const gstApplicable = items.reduce((s, o) => s + (o.gstIncluded !== false ? o.price * o.qty : 0), 0);
     const nonGstSubtotal = subtotal - gstApplicable;
-    const gst = (gstApplicable * DEFAULT_GST_PCT) / 100;
-    const total = gstApplicable + gst + nonGstSubtotal + (tableState?.deliveryCharge || 0) + (tableState?.containerCharge || 0) + (tableState?.serviceCharge || 0);
+    // Discount is Admin/Super-Admin only, same rule BillingTab applies to
+    // its own total - a Captain viewing/printing a Running Bill never sees
+    // or benefits from a discount that isn't theirs to grant.
+    const discount = restricted ? 0 : Math.min(tableState?.discount || 0, gstApplicable);
+    const taxableAmount = gstApplicable - discount;
+    const gst = (taxableAmount * DEFAULT_GST_PCT) / 100;
+    const total = taxableAmount + gst + nonGstSubtotal + (tableState?.deliveryCharge || 0) + (tableState?.containerCharge || 0) + (tableState?.serviceCharge || 0);
     const kotCount = (kotTickets || []).filter((k) => k.table === table && k.status !== 'cancelled' && k.status !== 'acknowledged').length;
-    return { sentRows, unsentRows, subtotal, gstApplicable, nonGstSubtotal, gst, total, kotCount };
-  }, [tableState, kotTickets, table]);
+    return { sentRows, unsentRows, subtotal, gstApplicable, nonGstSubtotal, discount, gst, total, kotCount };
+  }, [tableState, kotTickets, table, restricted]);
 
   async function printRunningBill() {
     setPrinting(true);
@@ -48,7 +53,8 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
           customerPhone: tableState?.customerPhone || null,
           guestCount: tableState?.guestCount || null,
           items: (tableState?.items || []).map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
-          subtotal, gstPct: DEFAULT_GST_PCT, gst, total,
+          subtotal, discount, gstPct: DEFAULT_GST_PCT, gst, total,
+          deliveryCharge: tableState?.deliveryCharge || 0, containerCharge: tableState?.containerCharge || 0, serviceCharge: tableState?.serviceCharge || 0,
           printedAt: new Date().toISOString(),
           isReprint: false
         }
@@ -112,7 +118,11 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
         <hr className="border-dashed my-2" />
         <div className="flex justify-between py-1"><span>Subtotal</span><span>{rupee(subtotal)}</span></div>
         {nonGstSubtotal > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Non-GST items</span><span>{rupee(nonGstSubtotal)}</span></div>}
+        {discount > 0 && <div className="flex justify-between py-1 text-xs text-bad"><span>Discount</span><span>-{rupee(discount)}</span></div>}
         <div className="flex justify-between py-1"><span>GST ({DEFAULT_GST_PCT}%)</span><span>{rupee(gst)}</span></div>
+        {tableState?.deliveryCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Delivery Charge</span><span>{rupee(tableState.deliveryCharge)}</span></div>}
+        {tableState?.containerCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Container Charge</span><span>{rupee(tableState.containerCharge)}</span></div>}
+        {tableState?.serviceCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Service Charge</span><span>{rupee(tableState.serviceCharge)}</span></div>}
         <div className="flex justify-between items-center font-bold text-base bg-accent text-white rounded-lg px-2.5 py-2 my-2">
           <span>Current Total</span><span>{rupee(total)}</span>
         </div>
