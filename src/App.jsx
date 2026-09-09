@@ -491,7 +491,7 @@ function ManagerShell({ profile }) {
             {activeTab === 'expenses' && <ExpensesTab />}
             {activeTab === 'staff' && <StaffTab />}
             {activeTab === 'vendors' && <VendorsTab />}
-            {activeTab === 'customers' && <CustomersTab />}
+            {activeTab === 'customers' && <CustomersTab restaurantName={name} />}
             {activeTab === 'menu' && <MenuTab />}
             {activeTab === 'users' && <UserManagementTab viewerRole={profile.role} />}
             {activeTab === 'permissions' && isSuperAdmin && <PermissionsTab role="admin" />}

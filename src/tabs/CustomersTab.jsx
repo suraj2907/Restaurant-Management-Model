@@ -13,7 +13,7 @@ function whatsappReminderLink(phone, name, amount) {
   return `https://wa.me/${number}?text=${text}`;
 }
 
-export default function CustomersTab() {
+export default function CustomersTab({ restaurantName }) {
   const [customers, setCustomers, customersLoaded] = useSupabaseTable('customers', []);
   const [loyaltyLog, setLoyaltyLog] = useSupabaseTable('loyalty_log', []);
   const [credit, setCredit] = useSupabaseTable('customer_credit', []);
@@ -102,7 +102,11 @@ export default function CustomersTab() {
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, 'Customers');
-    XLSX.writeFile(wb, `customers-${todayStr()}.xlsx`);
+    // Restaurant name in the filename (not just "customers-<date>") so a
+    // downloaded file makes sense on its own once it's out of the app -
+    // e.g. shared over WhatsApp or sitting in someone's Downloads folder.
+    const safeName = (restaurantName || 'Restaurant').replace(/[\\/:*?"<>|]/g, '').trim();
+    XLSX.writeFile(wb, `${safeName} Customers ${todayStr()}.xlsx`);
   }
 
   const totalPoints = customers.reduce((s, c) => s + c.points, 0);
