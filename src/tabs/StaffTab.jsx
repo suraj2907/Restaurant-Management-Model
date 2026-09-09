@@ -218,7 +218,14 @@ export default function StaffTab() {
   function markAttendanceOn(date, staffId, staffName, status) {
     setAttendance((prev) => {
       const existing = prev.find((a) => a.staffId === staffId && a.date === date);
-      if (existing) return prev.map((a) => (a === existing ? { ...a, status } : a));
+      if (existing) {
+        // Clicking the already-marked status again toggles it off (e.g.
+        // Absent marked by mistake, nothing to record for that day) rather
+        // than just re-writing the same value - same for Present/Half
+        // Day/Leave, all four statuses share this one function.
+        if (existing.status === status) return prev.filter((a) => a !== existing);
+        return prev.map((a) => (a === existing ? { ...a, status } : a));
+      }
       return [...prev, { id: uid(), staffId, staffName, date, status }];
     });
   }
