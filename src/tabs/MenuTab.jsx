@@ -19,6 +19,7 @@ function readServiceTypes(f) {
 export default function MenuTab() {
   const [menu, setMenu, loaded] = useSupabaseTable('menu', []);
   const [editItem, setEditItem] = useState(null);
+  const [search, setSearch] = useState('');
 
   function addItem(e) {
     e.preventDefault();
@@ -86,13 +87,21 @@ export default function MenuTab() {
   const outOfStockCount = rows.filter((m) => !m.available).length;
   const avgMarginPct = rows.length ? rows.reduce((s, m) => s + m.marginPct, 0) / rows.length : 0;
 
+  // Search by name or code, same as Billing's menu search - only narrows
+  // which cards are shown below, the summary stats above stay computed
+  // from the full menu regardless of what's searched.
+  const q = search.trim().toLowerCase();
+  const filteredRows = useMemo(() => (
+    q ? rows.filter((m) => m.name.toLowerCase().includes(q) || (m.code && m.code.toLowerCase().includes(q))) : rows
+  ), [rows, q]);
+
   // Today's Special gets its own section up top (star icon, not buried in
   // its station/category group) - everything else is grouped Station
   // (top-level, drives KOT routing) -> Category (sub-level within it).
-  const specialRows = useMemo(() => rows.filter((m) => m.isSpecial), [rows]);
+  const specialRows = useMemo(() => filteredRows.filter((m) => m.isSpecial), [filteredRows]);
   const groupedRows = useMemo(() => {
     const stations = new Map(); // station label -> Map(category -> items[])
-    for (const m of rows) {
+    for (const m of filteredRows) {
       if (m.isSpecial) continue;
       const stationLabel = m.station === 'bristo' ? 'Bristo / Bar' : 'Kitchen';
       if (!stations.has(stationLabel)) stations.set(stationLabel, new Map());
@@ -102,12 +111,18 @@ export default function MenuTab() {
       cats.get(cat).push(m);
     }
     return stations;
-  }, [rows]);
+  }, [filteredRows]);
 
   return (
     <section>
       <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
         <h2 className="text-lg font-bold m-0">Menu Setup</h2>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search item by name or code..."
+          className="px-2.5 py-2 border border-border rounded-md text-sm w-full sm:w-64"
+        />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
@@ -165,6 +180,7 @@ export default function MenuTab() {
 
       {!loaded && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><SkeletonCards count={6} /></div>}
       {loaded && rows.length === 0 && <p className="text-muted text-sm">No menu items yet.</p>}
+      {loaded && rows.length > 0 && filteredRows.length === 0 && <p className="text-muted text-sm">"{search}" se koi item nahi mila.</p>}
 
       {loaded && specialRows.length > 0 && (
         <div className="mb-5">

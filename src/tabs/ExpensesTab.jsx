@@ -1,15 +1,43 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
+import { getSetting, setSetting } from '../lib/db.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 const CATEGORIES = ['Raw Material', 'Gas Cylinder', 'Rent', 'Electricity/Utility', 'Maintenance', 'Other'];
+const CUSTOM_CATEGORIES_KEY = 'expense_custom_categories';
 
 export default function ExpensesTab() {
   const [expenses, setExpenses, loaded] = useSupabaseTable('expenses', []);
   const [editExpense, setEditExpense] = useState(null);
+  // Restaurant-specific categories beyond the fixed built-in list (e.g.
+  // "Marketing", "Repairs") - stored in the shared settings table so every
+  // device/session sees the same list, not just this one's localStorage.
+  const [customCategories, setCustomCategories] = useState([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const allCategories = useMemo(() => [...CATEGORIES, ...customCategories], [customCategories]);
+
+  useEffect(() => {
+    getSetting(CUSTOM_CATEGORIES_KEY, []).then((v) => setCustomCategories(Array.isArray(v) ? v : []));
+  }, []);
+
+  async function addCategory(e) {
+    e.preventDefault();
+    const name = newCategoryInput.trim();
+    if (!name || allCategories.some((c) => c.toLowerCase() === name.toLowerCase())) {
+      setAddingCategory(false);
+      setNewCategoryInput('');
+      return;
+    }
+    const next = [...customCategories, name];
+    setCustomCategories(next);
+    await setSetting(CUSTOM_CATEGORIES_KEY, next);
+    setNewCategoryInput('');
+    setAddingCategory(false);
+  }
 
   function addExpense(e) {
     e.preventDefault();
@@ -48,11 +76,29 @@ export default function ExpensesTab() {
       <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
         <h2 className="text-lg font-bold m-0">Expenses</h2>
       </div>
-      <form onSubmit={addExpense} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
+      <form onSubmit={addExpense} className="flex gap-2.5 flex-wrap items-center mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="date" type="date" defaultValue={todayStr()} required className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <select name="category" className="px-2.5 py-2 border border-border rounded-md text-sm">
-          {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          {allCategories.map((c) => <option key={c}>{c}</option>)}
         </select>
+        {!addingCategory ? (
+          <button type="button" onClick={() => setAddingCategory(true)} className="px-2.5 py-2 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">
+            + Add Category
+          </button>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={newCategoryInput}
+              onChange={(e) => setNewCategoryInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryInput(''); } }}
+              placeholder="New category name"
+              className="px-2.5 py-2 border border-border rounded-md text-sm w-40"
+            />
+            <button type="button" onClick={addCategory} className="px-2.5 py-2 rounded-md text-xs font-semibold bg-good/15 text-good">Add</button>
+            <button type="button" onClick={() => { setAddingCategory(false); setNewCategoryInput(''); }} className="px-2.5 py-2 rounded-md text-xs font-semibold bg-bg border border-border">Cancel</button>
+          </span>
+        )}
         <input name="note" placeholder="Note (optional)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="amount" type="number" step="0.01" required placeholder="Amount" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <button className="px-4 py-2 rounded-lg font-semibold text-sm bg-accent text-white hover:bg-accent-dark">Add Expense</button>
@@ -95,8 +141,8 @@ export default function ExpensesTab() {
               <label className="text-xs text-muted font-semibold">Category</label>
               <select name="category" defaultValue={editExpense.category} className="px-2.5 py-2 border border-border rounded-md text-sm">
                 {/* Staff Salary / vendor purchases auto-log a category outside this list - keep it selectable so saving without touching it doesn't silently change it. */}
-                {!CATEGORIES.includes(editExpense.category) && <option>{editExpense.category}</option>}
-                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                {!allCategories.includes(editExpense.category) && <option>{editExpense.category}</option>}
+                {allCategories.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1 mb-3">
