@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from './config.js';
-import { buildKot, buildBill, buildTest } from './escpos.js';
+import { buildKot, buildBill, buildRunningBill, buildCheckItems, buildTest } from './escpos.js';
 import { printKitchenRaw, printDcr3Raw } from './printer.js';
 
 // Service-role key - bypasses RLS entirely, and claim_print_job/
@@ -43,6 +43,12 @@ async function processStation(station) {
       await printDcr3Raw(buffer);
     } else if (job.print_type === 'bill') {
       buffer = buildBill({ bill: job.payload, isReprint: job.payload?.isReprint === true });
+      await printDcr3Raw(buffer);
+    } else if (job.print_type === 'running_bill') {
+      buffer = buildRunningBill(job.payload || {});
+      await printDcr3Raw(buffer);
+    } else if (job.print_type === 'check_items') {
+      buffer = buildCheckItems(job.payload || {});
       await printDcr3Raw(buffer);
     } else if (job.print_type === 'test') {
       buffer = buildTest(job.payload || {});

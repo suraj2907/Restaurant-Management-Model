@@ -1372,4 +1372,84 @@ revoke all on function complete_print_job(text, boolean, text) from authenticate
 revoke all on function complete_print_job(text, boolean, text) from anon;
 grant execute on function complete_print_job(text, boolean, text) to service_role;
 
+-- ---------------------------------------------------------------
+-- Addendum: Running Bill + Check Items print types. Both route to the
+-- same DCR3 printer as bristo KOTs/bills (station bistro_bill), and both
+-- are normal operational prints - no admin password, unlike KOT/bill
+-- reprint. "Running bill" is a live, not-yet-final total for a table
+-- still open; "check items" is a read-only KOT-sourced order summary for
+-- cross-checking with the customer.
+-- ---------------------------------------------------------------
+alter table print_jobs drop constraint if exists print_jobs_print_type_check;
+alter table print_jobs add constraint print_jobs_print_type_check
+  check (print_type in ('kot_kitchen', 'kot_bristo', 'bill', 'test', 'running_bill', 'check_items'));
+
+alter table print_history drop constraint if exists print_history_print_type_check;
+alter table print_history add constraint print_history_print_type_check
+  check (print_type in ('kot_kitchen', 'kot_bristo', 'bill', 'test', 'running_bill', 'check_items'));
+
+create or replace function enqueue_print_job(
+  p_reference_id text,
+  p_print_type text,
+  p_station text,
+  p_printer_id text,
+  p_payload jsonb,
+  p_is_reprint boolean default false,
+  p_table_name text default null,
+  p_order_no integer default null,
+  p_idempotency_key text default null
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job_id text;
+  v_existing_id text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if p_print_type not in ('kot_kitchen', 'kot_bristo', 'bill', 'test', 'running_bill', 'check_items') then
+    raise exception 'Invalid print_type: %', p_print_type;
+  end if;
+  if p_station not in ('kitchen', 'bristo', 'bistro_bill') then
+    raise exception 'Invalid station: %', p_station;
+  end if;
+
+  if p_is_reprint then
+    raise exception 'Use enqueue_reprint_job for reprints';
+  end if;
+
+  if not has_resource('billing', true) then
+    raise exception 'Not permitted to print';
+  end if;
+
+  if p_idempotency_key is not null then
+    select id into v_existing_id from print_jobs where idempotency_key = p_idempotency_key;
+    if v_existing_id is not null then
+      return v_existing_id;
+    end if;
+  end if;
+
+  v_job_id := gen_random_uuid()::text;
+
+  insert into print_jobs (id, reference_id, print_type, station, printer_id, payload, idempotency_key)
+  values (v_job_id, p_reference_id, p_print_type, p_station, p_printer_id, p_payload, p_idempotency_key)
+  on conflict (idempotency_key) where idempotency_key is not null do nothing;
+
+  if not found then
+    select id into v_existing_id from print_jobs where idempotency_key = p_idempotency_key;
+    if v_existing_id is not null then
+      return v_existing_id;
+    end if;
+  end if;
+
+  insert into print_history (id, job_id, reference_id, print_type, station, table_name, order_no, printed_by, is_reprint, printer_id, status)
+  values (gen_random_uuid()::text, v_job_id, p_reference_id, p_print_type, p_station, p_table_name, p_order_no, auth.uid(), false, p_printer_id, 'queued');
+
+  return v_job_id;
+end;
+$$;
+revoke all on function enqueue_print_job(text, text, text, text, jsonb, boolean, text, integer, text) from public;
+grant execute on function enqueue_print_job(text, text, text, text, jsonb, boolean, text, integer, text) to authenticated;
+
 notify pgrst, 'reload schema';

@@ -23,6 +23,35 @@ export async function enqueueNormalPrintJob({ referenceId, printType, station, p
   return data;
 }
 
+// Running bill / Check Items - both operational, no-password normal
+// prints to the same DCR3/bistro_bill printer as bristo KOTs and final
+// bills. Check Items is deliberately never idempotent (section 45) - each
+// explicit click is its own print, unlike the "don't duplicate on a
+// double-click" protection normal KOT/bill prints get.
+export async function enqueueRunningBillPrintJob({ table, payload }) {
+  return enqueueNormalPrintJob({
+    referenceId: `running-${table}-${Date.now()}`,
+    printType: 'running_bill',
+    station: 'bistro_bill',
+    printerId: PRINTER_DCR3,
+    payload,
+    tableName: table,
+    idempotencyKey: null
+  });
+}
+
+export async function enqueueCheckItemsPrintJob({ table, payload }) {
+  return enqueueNormalPrintJob({
+    referenceId: `check-${table}-${Date.now()}`,
+    printType: 'check_items',
+    station: 'bistro_bill',
+    printerId: PRINTER_DCR3,
+    payload,
+    tableName: table,
+    idempotencyKey: null
+  });
+}
+
 // Reprint - admin/super_admin only, enforced inside the RPC itself (there
 // is no is_reprint parameter to spoof). Call verifyAdminReprintPassword()
 // first; this alone does not check the password.

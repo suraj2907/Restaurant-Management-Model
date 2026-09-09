@@ -110,6 +110,59 @@ export function buildBill({ bill, isReprint }) {
   return Buffer.concat(chunks);
 }
 
+// Running bill - a live, not-yet-final total for a table still open.
+// Must never be confused with the final paid invoice from buildBill(),
+// hence the explicit "NOT A FINAL PAID BILL" marker on the slip itself.
+export function buildRunningBill({ table, customerName, customerPhone, guestCount, items, subtotal, gstPct, gst, total, printedAt }) {
+  const chunks = [INIT, ALIGN_CENTER, BOLD_ON, line('RUNNING BILL'), BOLD_OFF, divider(), ALIGN_LEFT];
+
+  chunks.push(line(`TABLE: ${table || ''}`));
+  if (customerName) chunks.push(line(`CUSTOMER: ${customerName}`));
+  if (customerPhone) chunks.push(line(`PHONE: ${customerPhone}`));
+  if (guestCount) chunks.push(line(`GUESTS: ${guestCount}`));
+  chunks.push(divider());
+
+  chunks.push(twoCol('ITEM', 'QTY   AMT'));
+  for (const item of items || []) {
+    chunks.push(twoCol(item.name, `x${item.qty}  ${(item.price * item.qty).toFixed(0)}`));
+  }
+  chunks.push(divider());
+
+  chunks.push(twoCol('Subtotal', Number(subtotal || 0).toFixed(2)));
+  chunks.push(twoCol(`GST (${gstPct || 5}%)`, Number(gst || 0).toFixed(2)));
+  chunks.push(divider(), BOLD_ON, twoCol('RUNNING TOTAL', Number(total || 0).toFixed(2)), BOLD_OFF, divider());
+
+  chunks.push(ALIGN_CENTER, line('*** NOT A FINAL PAID BILL ***'));
+  chunks.push(line(printedAt ? new Date(printedAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN')));
+  chunks.push(FEED(3), CUT);
+  return Buffer.concat(chunks);
+}
+
+// Check Items - read-only order-verification slip for a customer
+// cross-check, never a bill (no prices shown at all, matching how
+// CheckItemsView.jsx presents it on screen).
+export function buildCheckItems({ table, customerName, customerPhone, guestCount, items, totalQty, printedAt }) {
+  const chunks = [INIT, ALIGN_CENTER, BOLD_ON, line('CHECK ITEMS'), BOLD_OFF, divider(), ALIGN_LEFT];
+
+  chunks.push(line(`TABLE: ${table || ''}`));
+  chunks.push(line(`CUSTOMER: ${customerName || 'Walk-in'}`));
+  if (customerPhone) chunks.push(line(`PHONE: ${customerPhone}`));
+  if (guestCount) chunks.push(line(`GUESTS: ${guestCount}`));
+  chunks.push(line(printedAt ? new Date(printedAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN')));
+  chunks.push(divider());
+
+  chunks.push(twoCol('ITEM', 'QTY'));
+  for (const item of items || []) {
+    chunks.push(twoCol(item.name, `x${item.qty}`));
+  }
+  chunks.push(divider());
+
+  chunks.push(BOLD_ON, line(`TOTAL QTY: ${totalQty ?? (items || []).reduce((s, i) => s + i.qty, 0)}`), BOLD_OFF);
+  chunks.push(ALIGN_CENTER, line('*** CUSTOMER ORDER CHECK ***'));
+  chunks.push(divider(), FEED(3), CUT);
+  return Buffer.concat(chunks);
+}
+
 export function buildTest({ title, printerName }) {
   const chunks = [
     INIT, ALIGN_CENTER, BOLD_ON, line(title || 'PRINTER TEST'), BOLD_OFF,

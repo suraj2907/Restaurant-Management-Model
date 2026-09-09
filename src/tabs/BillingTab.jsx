@@ -3,12 +3,14 @@ import { supabase } from '../lib/supabase.js';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { nextOrderNumber, dbInsert } from '../lib/db.js';
 import { uid, rupee, POINTS_PER_RUPEE, todayStr, roleLabel } from '../lib/store.js';
-import { enqueueNormalPrintJob, PRINTER_KITCHEN, PRINTER_DCR3 } from '../lib/printJobs.js';
+import { enqueueNormalPrintJob, enqueueRunningBillPrintJob, PRINTER_KITCHEN, PRINTER_DCR3 } from '../lib/printJobs.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 import Icon, { VegMark } from '../components/Icons.jsx';
 import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
 import QrCodesModal from '../components/QrCodesModal.jsx';
+import RunningBillView from '../components/RunningBillView.jsx';
+import CheckItemsView from '../components/CheckItemsView.jsx';
 
 const LONG_PRESS_MS = 550;
 const EMPTY_TABLE_STATE = { items: [], kotSent: {}, stewardId: null, guestCount: null, guestName: null, customerName: null, customerPhone: null, discount: 0, deliveryCharge: 0, containerCharge: 0, serviceCharge: 0, startedAt: null };
@@ -73,6 +75,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   const [shiftItemFor, setShiftItemFor] = useState(null); // { table, menuId, name }
   const [confirmCancelItem, setConfirmCancelItem] = useState(null); // { menuId, sentQty, name, station }
   const [customerPromptFor, setCustomerPromptFor] = useState(null); // table name, when it's a fresh (vacant) table
+  // Eye/Printer icons on an occupied grid card work on ANY table, not just
+  // whichever one is currently open - these hold just the table name, and
+  // RunningBillView/CheckItemsView derive everything else fresh from
+  // tableStates/kotTickets at render time.
+  const [runningBillFor, setRunningBillFor] = useState(null);
+  const [checkItemsFor, setCheckItemsFor] = useState(null);
+  const [gridPrintStatus, setGridPrintStatus] = useState(null); // { table, message, ok } - printer-icon quick print feedback
   const [, setTick] = useState(0);
 
   const pressTimerRef = useRef(null);
@@ -552,6 +561,36 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     selectTable(t);
   }
 
+  // Printer icon on a grid card - direct, no-password running-bill print
+  // for that table without entering it. Never touches window.print()/a
+  // browser dialog; just queues the same running_bill job type the Eye
+  // view's own Print button uses.
+  async function printRunningBillFromGrid(t) {
+    setGridPrintStatus(null);
+    const st = stateFor(t);
+    const items = st?.items || [];
+    if (items.length === 0) return;
+    const gstApplicable = items.reduce((s, o) => s + (o.gstIncluded !== false ? o.price * o.qty : 0), 0);
+    const nonGstSubtotal = items.reduce((s, o) => s + o.price * o.qty, 0) - gstApplicable;
+    const gst = gstApplicable * 0.05;
+    const subtotal = gstApplicable + nonGstSubtotal;
+    try {
+      await enqueueRunningBillPrintJob({
+        table: t,
+        payload: {
+          type: 'running_bill', table: t,
+          customerName: st?.customerName || null, customerPhone: st?.customerPhone || null, guestCount: st?.guestCount || null,
+          items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
+          subtotal, gstPct: 5, gst, total: subtotal + gst + (st?.deliveryCharge || 0) + (st?.containerCharge || 0) + (st?.serviceCharge || 0),
+          printedAt: new Date().toISOString(), isReprint: false
+        }
+      });
+      setGridPrintStatus({ table: t, ok: true, message: 'Running bill print queued.' });
+    } catch (err) {
+      setGridPrintStatus({ table: t, ok: false, message: err.message || 'Print queue nahi ho paya.' });
+    }
+  }
+
   // With 300+ items a flat always-visible grid made the page scroll forever -
   // browsing the full list is opt-in (search text or a category chip);
   // otherwise just Today's Special + category shortcuts show, keeping the
@@ -727,6 +766,33 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
               }`}>
                 {hasOrder ? (kotFired ? 'KOT Sent' : 'Running') : 'Vacant'}
               </span>
+              {hasOrder && (
+                <div className="flex items-center gap-1">
+                  <button
+                    title="View Running Bill" aria-label="View Running Bill"
+                    onClick={(e) => { e.stopPropagation(); setRunningBillFor(t); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className={`w-6 h-6 flex items-center justify-center rounded-md ${isActive ? 'bg-white/20 text-white' : 'bg-bg border border-border text-muted'}`}
+                  >
+                    <Icon name="eye" className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    title="Print Running Bill" aria-label="Print Running Bill"
+                    onClick={(e) => { e.stopPropagation(); printRunningBillFromGrid(t); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className={`w-6 h-6 flex items-center justify-center rounded-md ${isActive ? 'bg-white/20 text-white' : 'bg-bg border border-border text-muted'}`}
+                  >
+                    <Icon name="printer" className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+              {gridPrintStatus?.table === t && (
+                <span className={`text-[0.6rem] font-semibold ${gridPrintStatus.ok ? (isActive ? 'text-white' : 'text-good') : 'text-bad'}`}>
+                  {gridPrintStatus.ok ? '✓ Queued' : '⚠ Failed'}
+                </span>
+              )}
               {steward && (
                 <span className={`text-[0.62rem] ${isActive ? 'text-white/80' : 'text-muted'}`}>Steward: {steward}</span>
               )}
@@ -815,49 +881,36 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
               const newRows = items
                 .map((o) => ({ ...o, newQty: o.qty - Math.min(o.qty, alreadySent[o.menuId] || 0) }))
                 .filter((o) => o.newQty > 0);
+              const sentTotal = sentRows.reduce((s, o) => s + o.price * o.sentQty, 0);
+              const activeKotCountForTable = kotTickets.filter((k) => k.table === activeTable && k.status !== 'cancelled' && k.status !== 'acknowledged').length;
               return (
                 <>
+                  {/* Old/already-fired items don't show item-by-item here anymore
+                      (matches "clicking an occupied table opens New Items mode" -
+                      see [[project_restro_hisaab]]-adjacent addendum) - a compact
+                      summary plus Check Items/Running Bill covers that need, and
+                      Cancel-a-sent-item moved into the Running Bill (Eye) view. */}
                   {sentRows.length > 0 && (
-                    <div className="mb-3">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-good uppercase mb-1.5">
-                        <Icon name="kitchen" className="w-3.5 h-3.5" /> Sent to Kitchen
+                    <div className="mb-3 flex items-center justify-between gap-2 bg-well/60 rounded-lg px-3 py-2.5">
+                      <div>
+                        <span className="text-[0.65rem] font-bold text-good uppercase block">Previously Ordered</span>
+                        <span className="text-sm font-semibold">{rupee(sentTotal)} • {activeKotCountForTable} KOT{activeKotCountForTable === 1 ? '' : 's'} sent</span>
                       </div>
-                      {sentRows.map((o) => (
-                        <div key={o.menuId} className="flex items-center justify-between gap-2 py-1.5 opacity-80">
-                          <span className="flex-1 text-sm flex items-center gap-1.5">
-                            <VegMark veg={o.veg !== false} />
-                            {o.name}
-                            {o.note && <span className="text-xs italic text-muted">({o.note})</span>}
-                          </span>
-                          <span className="text-xs font-semibold text-muted">x{o.sentQty} • Cooking</span>
-                          <span className="w-[70px] text-right font-semibold text-sm">{rupee(o.price * o.sentQty)}</span>
-                          <button
-                            onClick={() => setShiftItemFor({ table: activeTable, menuId: o.menuId, name: o.name })}
-                            className="text-accent-dark text-xs font-bold px-1 hover:opacity-70"
-                            title="Ye item doosre table mein shift karein"
-                          >
-                            ⇄
-                          </button>
-                          {restricted ? (
-                            <span className="text-muted text-xs" title="Sirf Admin item cancel kar sakta hai">🔒</span>
-                          ) : (
-                            <button
-                              onClick={() => cancelSentItem(o.menuId, o.sentQty, o.name, o.station)}
-                              className="text-bad text-xs font-bold px-1.5 py-0.5 rounded hover:bg-bad/10"
-                              title="Ye item cancel karein - kitchen ko alert milega"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => setCheckItemsFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">
+                          Check Items
+                        </button>
+                        <button onClick={() => setRunningBillFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">
+                          Running Bill
+                        </button>
+                      </div>
                     </div>
                   )}
 
                   {newRows.length > 0 && (
                     <div>
                       <div className="flex items-center gap-1.5 text-xs font-bold text-secondary-dark uppercase mb-1.5">
-                        New Punch • Pending Kitchen Fire
+                        {sentRows.length > 0 ? 'New Items — Pending Kitchen Fire' : 'New Punch • Pending Kitchen Fire'}
                       </div>
                       {newRows.map((o) => (
                         <div key={o.menuId} className="py-2 border-b border-border">
@@ -890,6 +943,10 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
                         </div>
                       ))}
                     </div>
+                  )}
+
+                  {sentRows.length > 0 && newRows.length === 0 && (
+                    <div className="text-muted text-sm text-center py-5">Naya item add karein — abhi tak is round mein kuch punch nahi hua.</div>
                   )}
                 </>
               );
@@ -1185,6 +1242,26 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
       />
 
       <QrCodesModal open={qrCodesOpen} onClose={() => setQrCodesOpen(false)} tableRows={tableRows} />
+
+      {runningBillFor && (
+        <RunningBillView
+          table={runningBillFor}
+          tableState={stateFor(runningBillFor)}
+          kotTickets={kotTickets}
+          restricted={restricted}
+          onCancelItem={runningBillFor === activeTable ? cancelSentItem : undefined}
+          onClose={() => setRunningBillFor(null)}
+        />
+      )}
+
+      {checkItemsFor && (
+        <CheckItemsView
+          table={checkItemsFor}
+          tableState={stateFor(checkItemsFor)}
+          kotTickets={kotTickets}
+          onClose={() => setCheckItemsFor(null)}
+        />
+      )}
     </section>
   );
 }
