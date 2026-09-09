@@ -2,8 +2,12 @@ import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { rupee, todayStr } from '../lib/store.js';
+import { enqueueReprintJob, PRINTER_DCR3 } from '../lib/printJobs.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows } from '../components/Skeleton.jsx';
+import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
+import { ReceiptContent, downloadBill } from '../components/Receipt.jsx';
+import ReprintAuthorization from '../components/ReprintAuthorization.jsx';
 
 const RANGES = [
   { id: 'today', label: 'Today' },
@@ -24,7 +28,8 @@ function rangeStart(range) {
 // "Sales Report" screen (order no, payment type, tax split, biller) -
 // aggregate breakdowns (top items, by category/table/captain, peak hours)
 // live on the Dashboard tab instead.
-export default function ReportsTab() {
+export default function ReportsTab({ restaurantName, restaurantDetails, profile }) {
+  const canReprint = profile?.role === 'admin' || profile?.role === 'super_admin';
   const [bills, , billsLoaded] = useSupabaseTable('bills', []);
   const [range, setRange] = useState('week');
   const [search, setSearch] = useState('');
@@ -32,6 +37,9 @@ export default function ReportsTab() {
   // selecting a preset clears these back out so only one mode is active.
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [viewing, setViewing] = useState(null);
+  const [reprintFor, setReprintFor] = useState(null);
+  const [reprintStatus, setReprintStatus] = useState(null);
 
   function selectPreset(id) {
     setRange(id);
@@ -65,6 +73,20 @@ export default function ReportsTab() {
 
     return { rows, totals };
   }, [bills, range, fromDate, toDate, search]);
+
+  async function doReprint(bill) {
+    setReprintStatus(null);
+    try {
+      await enqueueReprintJob({
+        referenceId: bill.id, printType: 'bill', station: 'bistro_bill', printerId: PRINTER_DCR3,
+        payload: { ...bill, isReprint: true }, tableName: bill.table, orderNo: bill.orderNo
+      });
+      setReprintStatus({ billId: bill.id, message: 'Reprint queued.', ok: true });
+    } catch (err) {
+      setReprintStatus({ billId: bill.id, message: err.message || 'Reprint queue nahi ho paya.', ok: false });
+    }
+    setReprintFor(null);
+  }
 
   function exportReport() {
     const sheet = XLSX.utils.json_to_sheet(rows.map((b) => ({
@@ -124,9 +146,9 @@ export default function ReportsTab() {
           </div>
         </div>
         <TableScroll>
-          <DataTable columns={['Order No.', 'Date', 'Table', 'Payment Type', 'Amount', 'Discount', 'Delivery Charge', 'Container Charge', 'Service Charge', 'CGST', 'SGST', 'Waived Off', 'Total', 'Billed By']}>
-            {!billsLoaded && <SkeletonRows rows={5} cols={14} />}
-            {billsLoaded && rows.length === 0 && <EmptyRow span={14}>Is range mein koi bill nahi hai.</EmptyRow>}
+          <DataTable columns={['Order No.', 'Date', 'Table', 'Payment Type', 'Amount', 'Discount', 'Delivery Charge', 'Container Charge', 'Service Charge', 'CGST', 'SGST', 'Waived Off', 'Total', 'Billed By', 'Actions']}>
+            {!billsLoaded && <SkeletonRows rows={5} cols={15} />}
+            {billsLoaded && rows.length === 0 && <EmptyRow span={15}>Is range mein koi bill nahi hai.</EmptyRow>}
             {billsLoaded && rows.length > 0 && (
               <tr className="bg-well/60 font-bold">
                 <td className={td}>Total</td>
@@ -142,6 +164,7 @@ export default function ReportsTab() {
                 <td className={td}>{rupee(totals.sgst)}</td>
                 <td className={td}>{rupee(totals.waivedOff)}</td>
                 <td className={td}>{rupee(totals.total)}</td>
+                <td className={td}>-</td>
                 <td className={td}>-</td>
               </tr>
             )}
@@ -161,11 +184,37 @@ export default function ReportsTab() {
                 <td className={td}>{b.waivedOff > 0 ? rupee(b.waivedOff) : '-'}</td>
                 <td className={`${td} font-semibold`}>{rupee(b.total)}</td>
                 <td className={td}>{b.billedBy || '-'}</td>
+                <td className={`${td} space-x-2`}>
+                  <button onClick={() => setViewing(b)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink">View</button>
+                  {canReprint && (
+                    <button onClick={() => { setReprintFor(b); setReprintStatus(null); }} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bad/10 text-bad hover:bg-bad/20">Reprint</button>
+                  )}
+                  {reprintStatus?.billId === b.id && (
+                    <div className={`text-xs font-semibold mt-1 ${reprintStatus.ok ? 'text-good' : 'text-bad'}`}>{reprintStatus.message}</div>
+                  )}
+                  {reprintFor?.id === b.id && (
+                    <ReprintAuthorization
+                      open
+                      title={`Reprint Bill ${b.orderNo ? '#' + b.orderNo : ''} — ${b.table}`}
+                      onCancel={() => setReprintFor(null)}
+                      onAuthorized={() => doReprint(b)}
+                    />
+                  )}
+                </td>
               </tr>
             ))}
           </DataTable>
         </TableScroll>
       </div>
+
+      <Modal open={!!viewing} onClose={() => setViewing(null)} printArea>
+        {viewing && <ReceiptContent bill={viewing} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
+        <ModalActions>
+          <Btn variant="primary" onClick={() => window.print()}>Print (Browser)</Btn>
+          <Btn onClick={() => viewing && downloadBill(viewing, restaurantName, restaurantDetails)}>Download</Btn>
+          <Btn onClick={() => setViewing(null)}>Close</Btn>
+        </ModalActions>
+      </Modal>
     </section>
   );
 }

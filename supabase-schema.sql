@@ -997,3 +997,379 @@ insert into role_permissions (id, role, resource, can_write) values ('inventory:
 alter table inventory add column if not exists category text;
 alter table stock_log add column if not exists logged_by_name text;
 alter table stock_log add column if not exists logged_by_role text;
+
+-- ===============================================================
+-- THERMAL PRINTING / KOT REPRINT / BILL REPRINT SYSTEM
+-- ===============================================================
+-- Physical printing never happens from the browser. A normal KOT/bill
+-- print enqueues a row in `print_jobs`; a separate Windows "Print Agent"
+-- process (print-agent/, running on the counter PC) polls for pending
+-- jobs, sends raw ESC/POS bytes to the actual printer (LAN for the
+-- kitchen RTP-80, the Windows spooler/USB for the DCR3 that handles
+-- both bristo KOTs and bills), and reports back success/failure.
+-- `print_history` is the permanent audit trail (who/when/what/normal-or-
+-- reprint); `print_jobs` is the working queue and can be inspected for
+-- live status. KOT/bill reprint additionally requires a shared admin
+-- password (hashed with pgcrypto, never readable from the frontend) -
+-- enforced in the enqueue_reprint_job() RPC itself, not just hidden in
+-- the UI, so a Captain can never reprint even via a direct API call.
+
+-- kot_tickets: two columns the print/history system needs that the
+-- table didn't have yet - whether this ticket was a reorder (add-on to
+-- an already-fired KOT) and a stable creation timestamp for sorting.
+alter table kot_tickets add column if not exists is_reorder boolean not null default false;
+alter table kot_tickets add column if not exists created_at timestamptz not null default now();
+
+-- ---------------------------------------------------------------
+-- Admin reprint password (shared secret gating KOT/bill reprint)
+-- ---------------------------------------------------------------
+-- Deliberately NOT part of the profiles/role_permissions system - this
+-- is one shared password the restaurant sets once, not per-user. Never
+-- selectable from the frontend: no SELECT policy, and RLS + revoked
+-- grants lock the table to the Postgres owner/service role only. The
+-- only way in or out is through the two RPCs below, which never return
+-- the hash itself - verify returns a boolean, set returns nothing but
+-- success.
+create table if not exists admin_reprint_security (
+  id integer primary key default 1,
+  password_hash text not null,
+  updated_at timestamptz not null default now(),
+  constraint admin_reprint_security_singleton check (id = 1)
+);
+alter table admin_reprint_security enable row level security;
+revoke all on admin_reprint_security from anon;
+revoke all on admin_reprint_security from authenticated;
+-- No policies at all - even an authenticated admin/super_admin session
+-- cannot SELECT/UPDATE this table directly, only via the RPCs.
+
+create or replace function verify_admin_reprint_password(p_password text) returns boolean
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_hash text;
+begin
+  if auth.uid() is null then
+    return false;
+  end if;
+
+  if my_role() not in ('admin', 'super_admin') then
+    return false;
+  end if;
+
+  if p_password is null or length(p_password) = 0 then
+    return false;
+  end if;
+
+  select password_hash into v_hash from admin_reprint_security where id = 1;
+
+  if v_hash is null then
+    return false;
+  end if;
+
+  return crypt(p_password, v_hash) = v_hash;
+end;
+$$;
+revoke all on function verify_admin_reprint_password(text) from public;
+grant execute on function verify_admin_reprint_password(text) to authenticated;
+
+create or replace function set_admin_reprint_password(p_password text) returns boolean
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if auth.uid() is null then
+    return false;
+  end if;
+
+  if my_role() not in ('admin', 'super_admin') then
+    return false;
+  end if;
+
+  if p_password is null or length(trim(p_password)) < 4 then
+    raise exception 'Password must be at least 4 characters';
+  end if;
+
+  insert into admin_reprint_security (id, password_hash, updated_at)
+  values (1, crypt(p_password, gen_salt('bf')), now())
+  on conflict (id) do update set password_hash = excluded.password_hash, updated_at = now();
+
+  return true;
+end;
+$$;
+revoke all on function set_admin_reprint_password(text) from public;
+grant execute on function set_admin_reprint_password(text) to authenticated;
+
+-- ---------------------------------------------------------------
+-- Printers - exactly two physical printer records
+-- ---------------------------------------------------------------
+-- Retsol RTP-80 (kitchen, LAN/ESC-POS-over-TCP) and Retsol DCR3 (bristo
+-- KOT + bill, USB via the Windows printer spooler on the admin PC - ONE
+-- physical printer, not two separate records, even though it handles
+-- two different print types). IP/port/Windows-printer-name are left
+-- blank until the owner configures them from Printer Settings - never
+-- guessed or hardcoded.
+create table if not exists printers (
+  id text primary key,
+  name text not null,
+  type text not null check (type in ('lan', 'windows')),
+  station text not null check (station in ('kitchen', 'bistro_bill')),
+  ip_address text,
+  port integer,
+  windows_printer_name text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table printers enable row level security;
+drop policy if exists "printers_select" on printers;
+drop policy if exists "printers_write" on printers;
+create policy "printers_select" on printers for select using (auth.uid() is not null);
+create policy "printers_write" on printers for all
+  using (my_role() in ('admin', 'super_admin'))
+  with check (my_role() in ('admin', 'super_admin'));
+
+insert into printers (id, name, type, station, port) values
+  ('printer-kitchen', 'Retsol RTP-80', 'lan', 'kitchen', 9100),
+  ('printer-dcr3', 'Retsol DCR3', 'windows', 'bistro_bill', null)
+on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------
+-- Print jobs - the working queue the Print Agent polls
+-- ---------------------------------------------------------------
+create table if not exists print_jobs (
+  id text primary key,
+  reference_id text not null,
+  print_type text not null check (print_type in ('kot_kitchen', 'kot_bristo', 'bill', 'test')),
+  station text not null check (station in ('kitchen', 'bristo', 'bistro_bill')),
+  printer_id text references printers(id),
+  payload jsonb not null,
+  status text not null default 'pending' check (status in ('pending', 'printing', 'printed', 'failed')),
+  attempts integer not null default 0,
+  error text,
+  idempotency_key text,
+  created_at timestamptz not null default now(),
+  printed_at timestamptz
+);
+create unique index if not exists idx_print_jobs_idempotency_key on print_jobs(idempotency_key) where idempotency_key is not null;
+create index if not exists idx_print_jobs_status_created on print_jobs(status, created_at);
+create index if not exists idx_print_jobs_station_status on print_jobs(station, status);
+create index if not exists idx_print_jobs_reference on print_jobs(reference_id);
+alter table print_jobs enable row level security;
+drop policy if exists "print_jobs_select" on print_jobs;
+create policy "print_jobs_select" on print_jobs for select using (has_resource('billing'));
+-- No insert/update/delete policy for authenticated/anon - every write
+-- goes through enqueue_print_job/enqueue_reprint_job (normal users) or
+-- claim_print_job/complete_print_job (Print Agent, via service_role,
+-- which bypasses RLS entirely).
+
+-- ---------------------------------------------------------------
+-- Print history - permanent audit trail, Admin/Super Admin only
+-- ---------------------------------------------------------------
+create table if not exists print_history (
+  id text primary key,
+  job_id text references print_jobs(id),
+  reference_id text not null,
+  print_type text not null check (print_type in ('kot_kitchen', 'kot_bristo', 'bill', 'test')),
+  station text not null check (station in ('kitchen', 'bristo', 'bistro_bill')),
+  table_name text,
+  order_no integer,
+  printed_by uuid references auth.users(id),
+  printed_at timestamptz not null default now(),
+  is_reprint boolean not null default false,
+  printer_id text references printers(id),
+  status text not null default 'queued' check (status in ('queued', 'printing', 'printed', 'failed'))
+);
+create index if not exists idx_print_history_printed_at on print_history(printed_at desc);
+create index if not exists idx_print_history_reference on print_history(reference_id);
+create index if not exists idx_print_history_station on print_history(station);
+alter table print_history enable row level security;
+drop policy if exists "print_history_select" on print_history;
+create policy "print_history_select" on print_history for select using (my_role() in ('admin', 'super_admin'));
+-- No insert/update/delete policy - only the SECURITY DEFINER RPCs below
+-- (enqueue_print_job/enqueue_reprint_job insert; complete_print_job
+-- updates) ever write here.
+
+-- ---------------------------------------------------------------
+-- enqueue_print_job - normal (non-reprint) print jobs
+-- ---------------------------------------------------------------
+-- Idempotent: if idempotency_key collides with an existing job (a React
+-- double-click/re-render firing the same "first print" twice), returns
+-- the existing job's id instead of erroring or creating a duplicate.
+create or replace function enqueue_print_job(
+  p_reference_id text,
+  p_print_type text,
+  p_station text,
+  p_printer_id text,
+  p_payload jsonb,
+  p_is_reprint boolean default false,
+  p_table_name text default null,
+  p_order_no integer default null,
+  p_idempotency_key text default null
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job_id text;
+  v_existing_id text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if p_print_type not in ('kot_kitchen', 'kot_bristo', 'bill', 'test') then
+    raise exception 'Invalid print_type: %', p_print_type;
+  end if;
+  if p_station not in ('kitchen', 'bristo', 'bistro_bill') then
+    raise exception 'Invalid station: %', p_station;
+  end if;
+
+  -- Reprints must go through enqueue_reprint_job, which enforces the
+  -- admin/super_admin + password gate - this entry point only ever
+  -- creates normal, no-password-required jobs.
+  if p_is_reprint then
+    raise exception 'Use enqueue_reprint_job for reprints';
+  end if;
+
+  if not has_resource('billing', true) then
+    raise exception 'Not permitted to print';
+  end if;
+
+  if p_idempotency_key is not null then
+    select id into v_existing_id from print_jobs where idempotency_key = p_idempotency_key;
+    if v_existing_id is not null then
+      return v_existing_id;
+    end if;
+  end if;
+
+  v_job_id := gen_random_uuid()::text;
+
+  insert into print_jobs (id, reference_id, print_type, station, printer_id, payload, idempotency_key)
+  values (v_job_id, p_reference_id, p_print_type, p_station, p_printer_id, p_payload, p_idempotency_key)
+  on conflict (idempotency_key) where idempotency_key is not null do nothing;
+
+  if not found then
+    select id into v_existing_id from print_jobs where idempotency_key = p_idempotency_key;
+    if v_existing_id is not null then
+      return v_existing_id;
+    end if;
+  end if;
+
+  insert into print_history (id, job_id, reference_id, print_type, station, table_name, order_no, printed_by, is_reprint, printer_id, status)
+  values (gen_random_uuid()::text, v_job_id, p_reference_id, p_print_type, p_station, p_table_name, p_order_no, auth.uid(), false, p_printer_id, 'queued');
+
+  return v_job_id;
+end;
+$$;
+revoke all on function enqueue_print_job(text, text, text, text, jsonb, boolean, text, integer, text) from public;
+grant execute on function enqueue_print_job(text, text, text, text, jsonb, boolean, text, integer, text) to authenticated;
+
+-- ---------------------------------------------------------------
+-- enqueue_reprint_job - the ONLY path that can create is_reprint=true
+-- jobs. Admin/Super Admin only, enforced here regardless of what the
+-- frontend sends (there is no p_is_reprint parameter at all - it is
+-- hardcoded true internally, so it cannot be spoofed to false).
+-- ---------------------------------------------------------------
+create or replace function enqueue_reprint_job(
+  p_reference_id text,
+  p_print_type text,
+  p_station text,
+  p_printer_id text,
+  p_payload jsonb,
+  p_table_name text default null,
+  p_order_no integer default null
+) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job_id text;
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if my_role() not in ('admin', 'super_admin') then
+    raise exception 'Only Admin/Super Admin can reprint';
+  end if;
+
+  if p_print_type not in ('kot_kitchen', 'kot_bristo', 'bill') then
+    raise exception 'Invalid print_type: %', p_print_type;
+  end if;
+  if p_station not in ('kitchen', 'bristo', 'bistro_bill') then
+    raise exception 'Invalid station: %', p_station;
+  end if;
+
+  v_job_id := gen_random_uuid()::text;
+
+  -- Reprints never set idempotency_key - every reprint is intentionally
+  -- a brand new job, never deduplicated against a previous one.
+  insert into print_jobs (id, reference_id, print_type, station, printer_id, payload, idempotency_key)
+  values (v_job_id, p_reference_id, p_print_type, p_station, p_printer_id, p_payload, null);
+
+  insert into print_history (id, job_id, reference_id, print_type, station, table_name, order_no, printed_by, is_reprint, printer_id, status)
+  values (gen_random_uuid()::text, v_job_id, p_reference_id, p_print_type, p_station, p_table_name, p_order_no, auth.uid(), true, p_printer_id, 'queued');
+
+  return v_job_id;
+end;
+$$;
+revoke all on function enqueue_reprint_job(text, text, text, text, jsonb, text, integer) from public;
+grant execute on function enqueue_reprint_job(text, text, text, text, jsonb, text, integer) to authenticated;
+
+-- ---------------------------------------------------------------
+-- claim_print_job / complete_print_job - Print Agent only (called with
+-- the service-role key, which authenticates as Postgres role
+-- `service_role` and bypasses RLS entirely; these grants additionally
+-- lock the RPCs themselves to that role so no authenticated app user
+-- can call them even directly).
+-- ---------------------------------------------------------------
+create or replace function claim_print_job(p_station text) returns print_jobs
+language plpgsql security definer set search_path = public as $$
+declare
+  v_job print_jobs;
+begin
+  with next_job as (
+    select id from print_jobs
+    where status = 'pending' and station = p_station
+    order by created_at
+    for update skip locked
+    limit 1
+  )
+  update print_jobs pj
+  set status = 'printing', attempts = pj.attempts + 1
+  from next_job
+  where pj.id = next_job.id
+  returning pj.* into v_job;
+
+  return v_job;
+end;
+$$;
+revoke all on function claim_print_job(text) from public;
+revoke all on function claim_print_job(text) from authenticated;
+revoke all on function claim_print_job(text) from anon;
+grant execute on function claim_print_job(text) to service_role;
+
+create or replace function complete_print_job(
+  p_job_id text,
+  p_success boolean,
+  p_error text default null
+) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_attempts integer;
+  v_max_attempts constant integer := 3;
+begin
+  if p_success then
+    update print_jobs set status = 'printed', printed_at = now(), error = null where id = p_job_id;
+    update print_history set status = 'printed' where job_id = p_job_id;
+  else
+    select attempts into v_attempts from print_jobs where id = p_job_id;
+    if v_attempts is not null and v_attempts < v_max_attempts then
+      update print_jobs set status = 'pending', error = p_error where id = p_job_id;
+      update print_history set status = 'queued' where job_id = p_job_id;
+    else
+      update print_jobs set status = 'failed', error = p_error where id = p_job_id;
+      update print_history set status = 'failed' where job_id = p_job_id;
+    end if;
+  end if;
+end;
+$$;
+revoke all on function complete_print_job(text, boolean, text) from public;
+revoke all on function complete_print_job(text, boolean, text) from authenticated;
+revoke all on function complete_print_job(text, boolean, text) from anon;
+grant execute on function complete_print_job(text, boolean, text) to service_role;
+
+notify pgrst, 'reload schema';

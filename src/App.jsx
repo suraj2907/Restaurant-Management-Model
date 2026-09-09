@@ -35,6 +35,9 @@ const KitchenDisplayTab = lazy(() => import('./tabs/KitchenDisplayTab.jsx'));
 const CashAuditTab = lazy(() => import('./tabs/CashAuditTab.jsx'));
 const UserManagementTab = lazy(() => import('./tabs/UserManagementTab.jsx'));
 const PermissionsTab = lazy(() => import('./tabs/PermissionsTab.jsx'));
+const KotHistoryTab = lazy(() => import('./tabs/KotHistoryTab.jsx'));
+const PrinterSettingsTab = lazy(() => import('./tabs/PrinterSettingsTab.jsx'));
+const PrintHistoryTab = lazy(() => import('./tabs/PrintHistoryTab.jsx'));
 
 // Grouped under section headers in the sidebar so a Super Admin's 14 tabs
 // don't read as one flat undifferentiated list - each tab keeps its id/
@@ -56,6 +59,14 @@ const TABS = [
 const USERS_TAB = { id: 'users', label: 'Team / Users', icon: 'users', section: 'Admin' };
 const PERMISSIONS_TAB = { id: 'permissions', label: 'Admin Permissions', icon: 'permissions', section: 'Admin' };
 const CAPTAIN_PERMISSIONS_TAB = { id: 'captain_permissions', label: 'Captain Permissions', icon: 'permissions', section: 'Admin' };
+// KOT History isn't tied to a role_permissions resource (it's a
+// permanent audit view derived from kot_tickets, not a distinct
+// writable resource) - always visible to Admin/Super Admin, same tier
+// as Team/Users below. Printer Settings and Print History are strictly
+// Admin/Super Admin per the printing system's own security requirements.
+const KOT_HISTORY_TAB = { id: 'kot_history', label: 'KOT History', icon: 'kitchen', section: 'Operations' };
+const PRINTER_SETTINGS_TAB = { id: 'printer_settings', label: 'Printer Settings', icon: 'printer', section: 'Admin' };
+const PRINT_HISTORY_TAB = { id: 'print_history', label: 'Print History', icon: 'reports', section: 'Admin' };
 const SECTION_ORDER = ['Operations', 'Insights', 'Management', 'Admin'];
 
 function TabFallback() {
@@ -350,8 +361,8 @@ function ManagerShell({ profile }) {
   );
 
   const tabs = useMemo(() => {
-    if (isSuperAdmin) return [...TABS, USERS_TAB, PERMISSIONS_TAB];
-    return [...TABS.filter((t) => adminGrants.has(t.id)), USERS_TAB, CAPTAIN_PERMISSIONS_TAB];
+    if (isSuperAdmin) return [...TABS, KOT_HISTORY_TAB, USERS_TAB, PERMISSIONS_TAB, PRINTER_SETTINGS_TAB, PRINT_HISTORY_TAB];
+    return [...TABS.filter((t) => adminGrants.has(t.id)), KOT_HISTORY_TAB, USERS_TAB, CAPTAIN_PERMISSIONS_TAB, PRINTER_SETTINGS_TAB, PRINT_HISTORY_TAB];
   }, [isSuperAdmin, adminGrants]);
 
   useEffect(() => {
@@ -514,7 +525,7 @@ function ManagerShell({ profile }) {
             {activeTab === 'kitchen' && <KitchenDisplayTab />}
             {activeTab === 'reservations' && <ReservationsTab restaurantName={name} restaurantDetails={details} />}
             {activeTab === 'dashboard' && <DashboardTab restaurantName={name} restaurantDetails={details} />}
-            {activeTab === 'reports' && <ReportsTab />}
+            {activeTab === 'reports' && <ReportsTab restaurantName={name} restaurantDetails={details} profile={profile} />}
             {activeTab === 'audit' && <CashAuditTab />}
             {activeTab === 'inventory' && <InventoryTab profile={profile} />}
             {activeTab === 'expenses' && <ExpensesTab />}
@@ -522,9 +533,12 @@ function ManagerShell({ profile }) {
             {activeTab === 'vendors' && <VendorsTab />}
             {activeTab === 'customers' && <CustomersTab restaurantName={name} />}
             {activeTab === 'menu' && <MenuTab />}
+            {activeTab === 'kot_history' && <KotHistoryTab profile={profile} />}
             {activeTab === 'users' && <UserManagementTab viewerRole={profile.role} />}
             {activeTab === 'permissions' && isSuperAdmin && <PermissionsTab role="admin" />}
             {activeTab === 'captain_permissions' && !isSuperAdmin && <PermissionsTab role="captain" />}
+            {activeTab === 'printer_settings' && <PrinterSettingsTab />}
+            {activeTab === 'print_history' && <PrintHistoryTab />}
           </Suspense>
           <AppFooter />
         </main>

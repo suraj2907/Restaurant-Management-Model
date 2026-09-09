@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { nextOrderNumber, dbInsert } from '../lib/db.js';
 import { uid, rupee, POINTS_PER_RUPEE, todayStr, roleLabel } from '../lib/store.js';
+import { enqueueNormalPrintJob, PRINTER_KITCHEN, PRINTER_DCR3 } from '../lib/printJobs.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 import Icon, { VegMark } from '../components/Icons.jsx';
@@ -196,26 +197,66 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   async function sendToKitchen() {
     if (!activeTable || items.length === 0) { alert('Order khaali hai.'); return; }
     const alreadySent = activeState?.kotSent || {};
+    const isReorder = Object.keys(alreadySent).length > 0;
     const newItems = items
       .map((o) => ({ ...o, qty: o.qty - (alreadySent[o.menuId] || 0) }))
       .filter((o) => o.qty > 0);
     if (newItems.length === 0) { alert('Is order mein kitchen ke liye koi naya item nahi hai.'); return; }
 
+    const kotId = uid();
     const ts = Date.now();
-    setKot({ table: activeTable, items: newItems, ts, isReorder: Object.keys(alreadySent).length > 0, billerName, billerRole });
+    const kotItems = newItems.map((o) => ({ name: o.name, qty: o.qty, price: o.price, note: o.note || '', veg: o.veg !== false, station: o.station || 'kitchen' }));
+    setKot({ id: kotId, table: activeTable, items: kotItems, ts, isReorder, billerName, billerRole, printStatus: [] });
     patchTableState(activeTable, { kotSent: Object.fromEntries(items.map((o) => [o.menuId, o.qty])) });
 
-    // Also push a ticket to Supabase so the Kitchen Display screen (a
-    // separate device) sees it live.
+    // Also push a permanent ticket to Supabase - this is what powers both
+    // the live Kitchen Display screen and KOT History (never deleted, even
+    // after the table's bill is settled - see completeBill()).
     await dbInsert('kot_tickets', {
-      id: uid(),
+      id: kotId,
       table: activeTable,
-      items: newItems.map((o) => ({ name: o.name, qty: o.qty, price: o.price, note: o.note || '', veg: o.veg !== false, station: o.station || 'kitchen' })),
+      orderNo: null,
+      items: kotItems,
       status: 'active',
       firedAt: ts,
       billerName,
-      billerRole
+      billerRole,
+      isReorder
     });
+
+    // Physical printing never happens straight from the browser - queue a
+    // job per station the moment the KOT is fired (no password; that's
+    // only for reprints). A mixed order queues two jobs sharing this same
+    // kotId as reference_id, one per physical printer.
+    const kitchenItems = kotItems.filter((i) => (i.station || 'kitchen') === 'kitchen');
+    const bristoItems = kotItems.filter((i) => i.station === 'bristo');
+    const payloadBase = { kotId, table: activeTable, billerName, billerRole, isReprint: false };
+    const printStatus = [];
+    if (kitchenItems.length) {
+      try {
+        await enqueueNormalPrintJob({
+          referenceId: kotId, printType: 'kot_kitchen', station: 'kitchen', printerId: PRINTER_KITCHEN,
+          payload: { ...payloadBase, items: kitchenItems }, tableName: activeTable,
+          idempotencyKey: `${kotId}:kot_kitchen:first`
+        });
+        printStatus.push({ ok: true, message: 'Kitchen print queued.' });
+      } catch (err) {
+        printStatus.push({ ok: false, message: err.message || 'Kitchen print queue nahi ho paya.' });
+      }
+    }
+    if (bristoItems.length) {
+      try {
+        await enqueueNormalPrintJob({
+          referenceId: kotId, printType: 'kot_bristo', station: 'bristo', printerId: PRINTER_DCR3,
+          payload: { ...payloadBase, items: bristoItems }, tableName: activeTable,
+          idempotencyKey: `${kotId}:kot_bristo:first`
+        });
+        printStatus.push({ ok: true, message: 'Bristo print queued.' });
+      } catch (err) {
+        printStatus.push({ ok: false, message: err.message || 'Bristo print queue nahi ho paya.' });
+      }
+    }
+    setKot((prev) => (prev && prev.id === kotId ? { ...prev, printStatus } : prev));
   }
 
   // Only Admin/Super Admin can cancel an item already fired to the kitchen
@@ -425,6 +466,8 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
 
     setBills((prev) => [...prev, bill]);
     setTableStates(tableStates.filter((ts) => ts.id !== activeTable));
+    // KOT tickets are never deleted here - only marked served - so KOT
+    // History and reprint stay available for this table's order forever.
     setKotTickets(kotTickets.map((k) => (k.table === activeTable && k.status !== 'served' ? { ...k, status: 'served' } : k)));
     setCustomerPhone('');
     setServedBy('');
@@ -432,7 +475,21 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     setSplitPayment(false);
     setSplitCash('');
     setSplitUpi('');
-    setReceipt({ bill, mode: 'print' });
+    setReceipt({ bill, mode: 'print', printStatus: null });
+
+    // Physical bill printing - same DCR3 that handles Bristo KOTs, no
+    // password (that's reprint-only). Self-contained payload so the Print
+    // Agent never needs to query `bills` again.
+    try {
+      await enqueueNormalPrintJob({
+        referenceId: bill.id, printType: 'bill', station: 'bistro_bill', printerId: PRINTER_DCR3,
+        payload: { ...bill, isReprint: false }, tableName: activeTable, orderNo: bill.orderNo,
+        idempotencyKey: `${bill.id}:bill:first`
+      });
+      setReceipt({ bill, mode: 'print', printStatus: { ok: true, message: 'Bill print queued.' } });
+    } catch (err) {
+      setReceipt({ bill, mode: 'print', printStatus: { ok: false, message: err.message || 'Bill print queue nahi ho paya.' } });
+    }
   }
 
   function selectTable(t) {
@@ -1031,8 +1088,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
 
       <Modal open={!!receipt} onClose={() => setReceipt(null)} printArea>
         {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
+        {receipt?.printStatus && (
+          <p className={`text-xs font-semibold mt-2 no-print ${receipt.printStatus.ok ? 'text-good' : 'text-bad'}`}>
+            {receipt.printStatus.ok ? '✓ ' : '⚠ '}{receipt.printStatus.message}
+          </p>
+        )}
         <ModalActions>
-          <Btn variant="primary" onClick={() => window.print()}>{receipt?.mode === 'reprint' ? 'Reprint' : 'Print'}</Btn>
+          <Btn variant="primary" onClick={() => window.print()}>{receipt?.mode === 'reprint' ? 'Reprint (Browser)' : 'Print (Browser)'}</Btn>
           <Btn onClick={() => receipt && downloadBill(receipt.bill, restaurantName, restaurantDetails)}>Download</Btn>
           <Btn onClick={() => setReceipt(null)}>Close</Btn>
         </ModalActions>
@@ -1049,8 +1111,8 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
               {kot.isReorder && <><br />Naya add hua order</>}
             </div>
             <hr className="border-dashed my-2" />
-            {kot.items.map((i) => (
-              <div key={i.menuId} className="mb-1">
+            {kot.items.map((i, idx) => (
+              <div key={idx} className="mb-1">
                 <div className="flex justify-between font-semibold">
                   <span>{i.name}</span><span>x{i.qty}</span>
                 </div>
@@ -1058,10 +1120,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
               </div>
             ))}
             <hr className="border-dashed my-2" />
+            {(kot.printStatus || []).map((s, idx) => (
+              <p key={idx} className={`text-xs font-semibold no-print ${s.ok ? 'text-good' : 'text-bad'}`}>{s.ok ? '✓ ' : '⚠ '}{s.message}</p>
+            ))}
           </div>
         )}
         <ModalActions>
-          <Btn variant="primary" onClick={() => window.print()}>Print KOT</Btn>
+          <Btn variant="primary" onClick={() => window.print()}>Print KOT (Browser)</Btn>
           <Btn onClick={() => setKot(null)}>Close</Btn>
         </ModalActions>
       </Modal>
