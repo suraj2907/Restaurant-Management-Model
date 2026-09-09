@@ -145,7 +145,11 @@ export function buildRunningBill({ table, customerName, customerPhone, guestCoun
 // Check Items - read-only order-verification slip for a customer
 // cross-check, never a bill (no prices shown at all, matching how
 // CheckItemsView.jsx presents it on screen).
-export function buildCheckItems({ restaurantName, table, customerName, customerPhone, guestCount, items, unsentItems, totalQty, printedBy, printedAt }) {
+// Aggregated total across every KOT round plus whatever's currently
+// unsent - one line per item, no "sent vs not yet sent" split (see
+// getCheckItemsData in src/lib/checkItems.js, which is what actually
+// builds this list before it reaches the print job).
+export function buildCheckItems({ restaurantName, table, customerName, customerPhone, guestCount, items, totalQty, printedBy, printedAt }) {
   const chunks = [INIT, ALIGN_CENTER, BOLD_ON, line('CHECK ITEMS'), BOLD_OFF];
   if (restaurantName) chunks.push(line(restaurantName));
   chunks.push(divider(), ALIGN_LEFT);
@@ -157,20 +161,11 @@ export function buildCheckItems({ restaurantName, table, customerName, customerP
   chunks.push(line(printedAt ? new Date(printedAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN')));
   chunks.push(divider());
 
-  chunks.push(BOLD_ON, line('SENT ITEMS'), BOLD_OFF);
   for (const item of items || []) {
     chunks.push(twoCol(item.name, `x${item.qty}`));
   }
   chunks.push(divider());
   chunks.push(BOLD_ON, line(`TOTAL QTY: ${totalQty ?? (items || []).reduce((s, i) => s + i.qty, 0)}`), BOLD_OFF);
-
-  if (unsentItems && unsentItems.length > 0) {
-    chunks.push(divider());
-    chunks.push(BOLD_ON, line('NOT YET SENT'), BOLD_OFF);
-    for (const item of unsentItems) {
-      chunks.push(twoCol(item.name, `x${item.qty}`));
-    }
-  }
 
   chunks.push(divider());
   if (printedBy) chunks.push(line(`Printed By: ${printedBy}`));

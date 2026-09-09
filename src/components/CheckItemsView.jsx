@@ -1,35 +1,32 @@
 import { useMemo, useState } from 'react';
 import { getCheckItemsData } from '../lib/checkItems.js';
-import { enqueueSecureCheckItemsPrintJob } from '../lib/printJobs.js';
+import { enqueueCheckItemsPrintJob } from '../lib/printJobs.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
-import ReprintAuthorization from './ReprintAuthorization.jsx';
 
 // Read-only order-verification screen ("bhai aapke table par ye 2 Paneer,
 // 3 Cold Coffee gaye hain") - never changes qty/price, never deletes,
 // never fires a KOT. Sourced from kot_tickets (the permanent record of
-// what actually went to the kitchen/bar), not table_state alone, so a
-// "not yet sent" item never gets miscounted as delivered. Check Items
-// itself is Admin/Super Admin only (gated by the caller not even opening
-// this view for a Captain) - printing it additionally requires the shared
-// admin password, verified again server-side inside
-// enqueue_check_items_job so a Captain can never queue this print even via
-// a direct RPC call.
+// what actually went to the kitchen/bar) PLUS whatever's currently punched
+// but not yet fired - this is "everything the table has ordered right
+// now", aggregated into one row per item, not a "sent vs not yet sent"
+// split. Check Items itself is Admin/Super Admin only (the caller doesn't
+// even render this view for a Captain); printing it is not password
+// gated (same as Running Bill), but the role check is still enforced
+// server-side inside enqueue_check_items_job so a Captain can never queue
+// this print even via a direct RPC call.
 export default function CheckItemsView({ table, tableState, kotTickets, restaurantName, printedBy, onClose }) {
   const [showKots, setShowKots] = useState(false);
   const [printStatus, setPrintStatus] = useState(null);
   const [printing, setPrinting] = useState(false);
-  const [authOpen, setAuthOpen] = useState(false);
 
   const data = useMemo(() => getCheckItemsData({ tableState, kotTickets, table }), [tableState, kotTickets, table]);
 
-  async function printCheckItems(password) {
-    setAuthOpen(false);
+  async function printCheckItems() {
     setPrinting(true);
     setPrintStatus(null);
     try {
-      await enqueueSecureCheckItemsPrintJob({
+      await enqueueCheckItemsPrintJob({
         table,
-        password,
         payload: {
           type: 'check_items',
           restaurantName: restaurantName || null,
@@ -37,9 +34,8 @@ export default function CheckItemsView({ table, tableState, kotTickets, restaura
           customerName: data.customerName,
           customerPhone: data.customerPhone,
           guestCount: data.guestCount,
-          items: data.sentItems,
-          totalQty: data.totalSentQty,
-          unsentItems: data.unsentItems,
+          items: data.items,
+          totalQty: data.totalQty,
           printedBy: printedBy || null,
           printedAt: new Date().toISOString()
         }
@@ -58,30 +54,17 @@ export default function CheckItemsView({ table, tableState, kotTickets, restaura
           <div><span className="text-muted">Customer:</span> <span className="font-semibold">{data.customerName || 'Walk-in'}</span></div>
           <div><span className="text-muted">Phone:</span> <span className="font-semibold">{data.customerPhone || '-'}</span></div>
         </div>
-        <p className="text-muted text-xs -mt-1 mb-3">Customer ke saath cross-check karein — sirf jo actually kitchen/bar bheja gaya hai wahi "Sent" mein dikhega.</p>
+        <p className="text-muted text-xs -mt-1 mb-3">Customer ke saath cross-check karein — table ne ab tak kya kya order kiya hai (fired + abhi punch hua dono).</p>
 
         <div className="mb-3">
-          <div className="text-xs font-bold text-good uppercase mb-1.5">Sent Items</div>
-          {data.sentItems.length === 0 && <p className="text-muted text-sm">Koi item abhi tak bheja nahi gaya.</p>}
-          {data.sentItems.map((i) => (
+          {data.items.length === 0 && <p className="text-muted text-sm">Is table par abhi tak koi item order nahi hua.</p>}
+          {data.items.map((i) => (
             <div key={i.name} className="flex items-center justify-between py-1 border-b border-border last:border-0">
               <span>{i.name} <span className="text-[0.65rem] px-1.5 py-0.5 rounded bg-well text-muted uppercase font-bold ml-1">{i.station}</span></span>
               <span className="font-bold">x{i.qty}</span>
             </div>
           ))}
         </div>
-
-        {data.unsentItems.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-bold text-secondary-dark uppercase mb-1.5">Not Yet Sent</div>
-            {data.unsentItems.map((i) => (
-              <div key={i.name} className="flex items-center justify-between py-1">
-                <span>{i.name}</span>
-                <span className="font-bold">x{i.qty}</span>
-              </div>
-            ))}
-          </div>
-        )}
 
         {data.cancelledItems.length > 0 && (
           <div className="mb-3">
@@ -97,7 +80,7 @@ export default function CheckItemsView({ table, tableState, kotTickets, restaura
 
         <div className="flex items-center gap-4 text-xs text-muted bg-well/60 rounded-lg px-3 py-2 mb-2">
           <span>KOTs: <b className="text-ink">{data.kotCount}</b></span>
-          <span>Total Sent Qty: <b className="text-ink">{data.totalSentQty}</b></span>
+          <span>Total Qty: <b className="text-ink">{data.totalQty}</b></span>
         </div>
 
         <button onClick={() => setShowKots((s) => !s)} className="text-xs font-semibold text-accent-dark underline mb-2">
@@ -125,19 +108,9 @@ export default function CheckItemsView({ table, tableState, kotTickets, restaura
         {printStatus && (
           <p className={`text-xs font-semibold ${printStatus.ok ? 'text-good' : 'text-bad'}`}>{printStatus.ok ? '✓ ' : '⚠ '}{printStatus.message}</p>
         )}
-
-        {authOpen && (
-          <ReprintAuthorization
-            open
-            title={`Print Check Items — ${table}`}
-            confirmLabel="Verify & Print"
-            onCancel={() => setAuthOpen(false)}
-            onAuthorized={printCheckItems}
-          />
-        )}
       </div>
       <ModalActions>
-        <Btn variant="primary" onClick={() => setAuthOpen(true)} disabled={printing || authOpen}>{printing ? 'Queueing...' : 'Print Check Items'}</Btn>
+        <Btn variant="primary" onClick={printCheckItems} disabled={printing}>{printing ? 'Queueing...' : 'Print Check Items'}</Btn>
         <Btn onClick={onClose}>Close</Btn>
       </ModalActions>
     </Modal>

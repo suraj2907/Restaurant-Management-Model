@@ -1,44 +1,32 @@
 import { useMemo, useState } from 'react';
 import { rupee } from '../lib/store.js';
 import { enqueueRunningBillPrintJob } from '../lib/printJobs.js';
+import { getRunningBillTotals } from '../lib/checkItems.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
-
-// Fixed default - table_state has no per-table GST rate of its own
-// (BillingTab's gstPct slider is a transient UI value for whichever table
-// is currently open), and Eye/Printer on the grid must work for ANY
-// occupied table without first entering it. This is a running/estimate
-// total, not the final bill - the real GST rate applies at Settle time.
-const DEFAULT_GST_PCT = 5;
 
 // Read-only "what does this table owe right now" view - reachable from
 // the grid's Eye icon without entering the table (never mutates
 // table_state/kotSent). Clearly labeled RUNNING BILL, never "Paid".
+// Preserves every KOT round as its own row(s) - the same menu item fired
+// in two different rounds shows as two separate lines, never merged into
+// one summed quantity (see getRunningBillTotals in lib/checkItems.js).
 export default function RunningBillView({ table, tableState, kotTickets, restricted, onCancelItem, onClose }) {
   const [printStatus, setPrintStatus] = useState(null);
   const [printing, setPrinting] = useState(false);
 
-  const { sentRows, unsentRows, subtotal, gstApplicable, nonGstSubtotal, discount, gst, total, kotCount } = useMemo(() => {
-    const items = tableState?.items || [];
-    const kotSent = tableState?.kotSent || {};
-    const sentRows = items
-      .map((o) => ({ ...o, sentQty: Math.min(o.qty, kotSent[o.menuId] || 0) }))
-      .filter((o) => o.sentQty > 0);
-    const unsentRows = items
-      .map((o) => ({ ...o, unsentQty: o.qty - Math.min(o.qty, kotSent[o.menuId] || 0) }))
-      .filter((o) => o.unsentQty > 0);
-    const subtotal = items.reduce((s, o) => s + o.price * o.qty, 0);
-    const gstApplicable = items.reduce((s, o) => s + (o.gstIncluded !== false ? o.price * o.qty : 0), 0);
-    const nonGstSubtotal = subtotal - gstApplicable;
-    // Discount is Admin/Super-Admin only, same rule BillingTab applies to
-    // its own total - a Captain viewing/printing a Running Bill never sees
-    // or benefits from a discount that isn't theirs to grant.
-    const discount = restricted ? 0 : Math.min(tableState?.discount || 0, gstApplicable);
-    const taxableAmount = gstApplicable - discount;
-    const gst = (taxableAmount * DEFAULT_GST_PCT) / 100;
-    const total = taxableAmount + gst + nonGstSubtotal + (tableState?.deliveryCharge || 0) + (tableState?.containerCharge || 0) + (tableState?.serviceCharge || 0);
-    const kotCount = (kotTickets || []).filter((k) => k.table === table && k.status !== 'cancelled' && k.status !== 'acknowledged').length;
-    return { sentRows, unsentRows, subtotal, gstApplicable, nonGstSubtotal, discount, gst, total, kotCount };
-  }, [tableState, kotTickets, table, restricted]);
+  const { rows, subtotal, nonGstSubtotal, discount, gstPct, gst, deliveryCharge, containerCharge, serviceCharge, total, kotCount } = useMemo(
+    () => getRunningBillTotals({ tableState, kotTickets, table, restricted }),
+    [tableState, kotTickets, table, restricted]
+  );
+
+  // kot_tickets items never carry menuId (see sendToKitchen in
+  // BillingTab.jsx) - cancelling a fired row still needs one, since
+  // cancelSentItem updates table_state.items by menuId. Resolve it by
+  // name against the table's still-current items; a row whose item has
+  // since been fully removed from table_state simply can't be cancelled.
+  function menuIdFor(name) {
+    return tableState?.items?.find((o) => o.name === name)?.menuId || null;
+  }
 
   async function printRunningBill() {
     setPrinting(true);
@@ -52,9 +40,9 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
           customerName: tableState?.customerName || null,
           customerPhone: tableState?.customerPhone || null,
           guestCount: tableState?.guestCount || null,
-          items: (tableState?.items || []).map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
-          subtotal, discount, gstPct: DEFAULT_GST_PCT, gst, total,
-          deliveryCharge: tableState?.deliveryCharge || 0, containerCharge: tableState?.containerCharge || 0, serviceCharge: tableState?.serviceCharge || 0,
+          items: rows.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
+          subtotal, discount, gstPct, gst, total,
+          deliveryCharge, containerCharge, serviceCharge,
           printedAt: new Date().toISOString(),
           isReprint: false
         }
@@ -79,16 +67,18 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
           <div><span className="text-muted">KOTs sent:</span> <span className="font-semibold">{kotCount}</span></div>
         </div>
 
-        {sentRows.length > 0 && (
+        {rows.length > 0 ? (
           <div className="mb-3">
-            <div className="text-xs font-bold text-good uppercase mb-1.5">Sent to Kitchen</div>
-            {sentRows.map((o) => (
-              <div key={o.menuId} className="flex items-center justify-between gap-2 py-1">
-                <span className="flex-1">{o.name} <span className="text-muted">x{o.sentQty}</span></span>
-                <span className="font-semibold">{rupee(o.price * o.sentQty)}</span>
-                {!restricted && onCancelItem && (
+            {rows.map((o, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-2 py-1 border-b border-border last:border-0">
+                <span className="flex-1">
+                  {o.name} <span className="text-muted">x{o.qty}</span>
+                  {o.isNew && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-secondary/15 text-secondary-dark text-[0.6rem] font-bold uppercase">New</span>}
+                </span>
+                <span className="font-semibold">{rupee(o.price * o.qty)}</span>
+                {!o.isNew && !restricted && onCancelItem && menuIdFor(o.name) && (
                   <button
-                    onClick={() => onCancelItem(o.menuId, o.sentQty, o.name, o.station)}
+                    onClick={() => onCancelItem(menuIdFor(o.name), o.qty, o.name, o.station)}
                     className="text-bad text-xs font-bold px-1.5 py-0.5 rounded hover:bg-bad/10"
                   >
                     Cancel
@@ -97,21 +87,7 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
               </div>
             ))}
           </div>
-        )}
-
-        {unsentRows.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-bold text-secondary-dark uppercase mb-1.5">Not Yet Sent</div>
-            {unsentRows.map((o) => (
-              <div key={o.menuId} className="flex items-center justify-between gap-2 py-1">
-                <span className="flex-1">{o.name} <span className="text-muted">x{o.unsentQty}</span></span>
-                <span className="font-semibold">{rupee(o.price * o.unsentQty)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {sentRows.length === 0 && unsentRows.length === 0 && (
+        ) : (
           <p className="text-muted text-sm py-3">Is table par koi item nahi hai.</p>
         )}
 
@@ -119,10 +95,10 @@ export default function RunningBillView({ table, tableState, kotTickets, restric
         <div className="flex justify-between py-1"><span>Subtotal</span><span>{rupee(subtotal)}</span></div>
         {nonGstSubtotal > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Non-GST items</span><span>{rupee(nonGstSubtotal)}</span></div>}
         {discount > 0 && <div className="flex justify-between py-1 text-xs text-bad"><span>Discount</span><span>-{rupee(discount)}</span></div>}
-        <div className="flex justify-between py-1"><span>GST ({DEFAULT_GST_PCT}%)</span><span>{rupee(gst)}</span></div>
-        {tableState?.deliveryCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Delivery Charge</span><span>{rupee(tableState.deliveryCharge)}</span></div>}
-        {tableState?.containerCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Container Charge</span><span>{rupee(tableState.containerCharge)}</span></div>}
-        {tableState?.serviceCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Service Charge</span><span>{rupee(tableState.serviceCharge)}</span></div>}
+        <div className="flex justify-between py-1"><span>GST ({gstPct}%)</span><span>{rupee(gst)}</span></div>
+        {deliveryCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Delivery Charge</span><span>{rupee(deliveryCharge)}</span></div>}
+        {containerCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Container Charge</span><span>{rupee(containerCharge)}</span></div>}
+        {serviceCharge > 0 && <div className="flex justify-between py-1 text-xs text-muted"><span>Service Charge</span><span>{rupee(serviceCharge)}</span></div>}
         <div className="flex justify-between items-center font-bold text-base bg-accent text-white rounded-lg px-2.5 py-2 my-2">
           <span>Current Total</span><span>{rupee(total)}</span>
         </div>

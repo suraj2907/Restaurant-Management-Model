@@ -4,6 +4,7 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { nextOrderNumber, dbInsert } from '../lib/db.js';
 import { uid, rupee, POINTS_PER_RUPEE, todayStr, roleLabel } from '../lib/store.js';
 import { enqueueNormalPrintJob, enqueueRunningBillPrintJob, PRINTER_KITCHEN, PRINTER_DCR3 } from '../lib/printJobs.js';
+import { getRunningBillTotals, getFinalBillItems } from '../lib/checkItems.js';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 import Icon, { VegMark } from '../components/Icons.jsx';
@@ -439,7 +440,14 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
       orderNo: await nextOrderNumber(),
       ts: Date.now(),
       table: activeTable,
-      items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
+      // Round-preserving, same as Running Bill - every fired KOT's items in
+      // firing order plus whatever's unsent, never merged by name/menuId
+      // even when the same item was ordered across more than one round.
+      // The total below is unaffected either way (summing split rows gives
+      // the same subtotal as summing one merged row per item), only the
+      // printed/stored item list changes.
+      items: getFinalBillItems({ tableState: activeState, kotTickets, table: activeTable })
+        .map((o) => ({ name: o.name, qty: o.qty, price: o.price, menuId: o.menuId || null, station: o.station || 'kitchen' })),
       subtotal, gstPct, gst, discount: effectiveDiscount, deliveryCharge, containerCharge, serviceCharge, waivedOff, total: roundedTotal, roundOff,
       payment: splitPayment ? 'Split' : payment,
       cashAmount, upiAmount, cardAmount,
@@ -568,26 +576,20 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   async function printRunningBillFromGrid(t) {
     setGridPrintStatus(null);
     const st = stateFor(t);
-    const items = st?.items || [];
-    if (items.length === 0) return;
-    const gstApplicable = items.reduce((s, o) => s + (o.gstIncluded !== false ? o.price * o.qty : 0), 0);
-    const nonGstSubtotal = items.reduce((s, o) => s + o.price * o.qty, 0) - gstApplicable;
-    // Discount is Admin/Super-Admin only, same as the Eye view and the
-    // main bill total - a Captain's direct grid print never applies it.
-    const discount = restricted ? 0 : Math.min(st?.discount || 0, gstApplicable);
-    const taxableAmount = gstApplicable - discount;
-    const gst = taxableAmount * 0.05;
-    const subtotal = gstApplicable + nonGstSubtotal;
-    const charges = (st?.deliveryCharge || 0) + (st?.containerCharge || 0) + (st?.serviceCharge || 0);
+    if ((st?.items || []).length === 0) return;
+    // Same round-preserving reconstruction the Eye view uses (see
+    // getRunningBillTotals in lib/checkItems.js) - never duplicated here.
+    const { rows, subtotal, discount, gstPct, gst, deliveryCharge, containerCharge, serviceCharge, total } =
+      getRunningBillTotals({ tableState: st, kotTickets, table: t, restricted });
     try {
       await enqueueRunningBillPrintJob({
         table: t,
         payload: {
           type: 'running_bill', table: t,
           customerName: st?.customerName || null, customerPhone: st?.customerPhone || null, guestCount: st?.guestCount || null,
-          items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
-          subtotal, discount, gstPct: 5, gst, total: taxableAmount + gst + nonGstSubtotal + charges,
-          deliveryCharge: st?.deliveryCharge || 0, containerCharge: st?.containerCharge || 0, serviceCharge: st?.serviceCharge || 0,
+          items: rows.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
+          subtotal, discount, gstPct, gst, total,
+          deliveryCharge, containerCharge, serviceCharge,
           printedAt: new Date().toISOString(), isReprint: false
         }
       });
