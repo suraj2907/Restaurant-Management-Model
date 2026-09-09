@@ -49,12 +49,13 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   const [menuCategory, setMenuCategory] = useState('');
   const [gstPct, setGstPct] = useState(5);
   const [payment, setPayment] = useState('Cash');
-  // Split payment: same bill settled across more than one mode (e.g. part
-  // Cash, part UPI). Off by default - the existing single-mode buttons.
+  // Split payment: same bill settled across more than one mode (part Cash,
+  // part UPI). This restaurant doesn't take card at all, so "Card" isn't
+  // offered as a mode - `cardAmount` on the bill always stays 0, kept only
+  // so the schema/downstream reports don't need special-casing.
   const [splitPayment, setSplitPayment] = useState(false);
   const [splitCash, setSplitCash] = useState('');
   const [splitUpi, setSplitUpi] = useState('');
-  const [splitCard, setSplitCard] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [waivedOffInput, setWaivedOffInput] = useState(''); // settlement-time round-down, e.g. ₹720 bill settled for ₹700
   // Delivery/Container/Service charge are opt-in per bill (most bills use
@@ -107,7 +108,7 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   const roundedTotal = Math.round(total);
   const roundOff = roundedTotal - total;
 
-  const splitSum = (parseFloat(splitCash) || 0) + (parseFloat(splitUpi) || 0) + (parseFloat(splitCard) || 0);
+  const splitSum = (parseFloat(splitCash) || 0) + (parseFloat(splitUpi) || 0);
   const splitRemaining = roundedTotal - splitSum;
   const splitBalanced = Math.abs(splitRemaining) < 1;
 
@@ -381,7 +382,7 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     // so Cash Audit/Dashboard never need to branch on split-or-not.
     const cashAmount = splitPayment ? (parseFloat(splitCash) || 0) : (payment === 'Cash' ? roundedTotal : 0);
     const upiAmount = splitPayment ? (parseFloat(splitUpi) || 0) : (payment === 'UPI' ? roundedTotal : 0);
-    const cardAmount = splitPayment ? (parseFloat(splitCard) || 0) : (payment === 'Card' ? roundedTotal : 0);
+    const cardAmount = 0;
 
     const bill = {
       id: uid(),
@@ -431,7 +432,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     setSplitPayment(false);
     setSplitCash('');
     setSplitUpi('');
-    setSplitCard('');
     setReceipt({ bill, mode: 'print' });
   }
 
@@ -450,7 +450,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     setSplitPayment(false);
     setSplitCash('');
     setSplitUpi('');
-    setSplitCard('');
     // Fresh table (no order yet) - ask for customer details before they
     // start punching items in. Skippable - not every guest wants to share.
     if (!st) setCustomerPromptFor(t);
@@ -957,32 +956,31 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
               <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional - for loyalty points" className="px-2 py-1.5 border border-border rounded-md flex-1 min-w-[140px]" />
             </div>
 
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted mt-3">
-              <input
-                type="checkbox" checked={splitPayment}
-                onChange={(e) => { setSplitPayment(e.target.checked); setSplitCash(''); setSplitUpi(''); setSplitCard(''); }}
-                className="w-3.5 h-3.5"
-              />
-              Split Payment (Cash + UPI + Card)
-            </label>
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              {['Cash', 'UPI'].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => { setSplitPayment(false); setPayment(mode); }}
+                  className={`py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                    !splitPayment && payment === mode ? 'bg-good text-white border-good' : 'bg-bg border-border text-muted'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+              <button
+                onClick={() => setSplitPayment(true)}
+                className={`py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                  splitPayment ? 'bg-good text-white border-good' : 'bg-bg border-border text-muted'
+                }`}
+              >
+                Split
+              </button>
+            </div>
 
-            {!splitPayment ? (
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {['Cash', 'UPI', 'Card'].map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setPayment(mode)}
-                    className={`py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
-                      payment === mode ? 'bg-good text-white border-good' : 'bg-bg border-border text-muted'
-                    }`}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
-            ) : (
+            {splitPayment && (
               <div className="mt-2">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <div className="flex flex-col gap-1">
                     <label className="text-xs text-muted">Cash</label>
                     <input type="number" min="0" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} placeholder="0" className="px-2 py-1.5 border border-border rounded-md text-sm" />
@@ -990,10 +988,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
                   <div className="flex flex-col gap-1">
                     <label className="text-xs text-muted">UPI</label>
                     <input type="number" min="0" value={splitUpi} onChange={(e) => setSplitUpi(e.target.value)} placeholder="0" className="px-2 py-1.5 border border-border rounded-md text-sm" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-muted">Card</label>
-                    <input type="number" min="0" value={splitCard} onChange={(e) => setSplitCard(e.target.value)} placeholder="0" className="px-2 py-1.5 border border-border rounded-md text-sm" />
                   </div>
                 </div>
                 <p className={`text-xs mt-1.5 font-semibold ${splitBalanced ? 'text-good' : 'text-bad'}`}>
