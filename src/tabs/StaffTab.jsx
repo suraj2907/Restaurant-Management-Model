@@ -101,7 +101,10 @@ const ATTENDANCE_STYLE = {
   present: 'bg-good/15 text-good',
   absent: 'bg-bad/10 text-bad',
   'half-day': 'bg-accent/10 text-accent-dark',
-  leave: 'bg-border/60 text-muted'
+  // Was grey - indistinguishable from the unselected/not-marked button
+  // state, so clicking Leave gave no visible feedback. info (blue) isn't
+  // used by any other status, so it's clearly its own color now.
+  leave: 'bg-info/10 text-info'
 };
 
 export default function StaffTab() {
