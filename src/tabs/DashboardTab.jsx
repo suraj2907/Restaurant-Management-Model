@@ -94,14 +94,25 @@ export default function DashboardTab({ restaurantName, restaurantDetails }) {
     });
     const tableSales = Object.values(tableMap).sort((a, b) => b.revenue - a.revenue);
 
-    const paymentMap = {};
+    // Always exactly 3 buckets (Cash/UPI/Card) rather than grouping by the
+    // `payment` label - a split bill's amount fields attribute correctly to
+    // each mode instead of landing in one opaque "Split" bucket. Bills from
+    // before split payments existed have all three fields at 0, so they
+    // fall back to crediting their single `payment` mode with the total.
+    const paymentMap = { Cash: { mode: 'Cash', revenue: 0, bills: 0 }, UPI: { mode: 'UPI', revenue: 0, bills: 0 }, Card: { mode: 'Card', revenue: 0, bills: 0 } };
     filtered.forEach((b) => {
-      const key = b.payment || 'Not specified';
-      if (!paymentMap[key]) paymentMap[key] = { mode: key, revenue: 0, bills: 0 };
-      paymentMap[key].revenue += b.total;
-      paymentMap[key].bills += 1;
+      const splitTotal = (b.cashAmount || 0) + (b.upiAmount || 0) + (b.cardAmount || 0);
+      if (splitTotal > 0) {
+        if (b.cashAmount > 0) { paymentMap.Cash.revenue += b.cashAmount; paymentMap.Cash.bills += 1; }
+        if (b.upiAmount > 0) { paymentMap.UPI.revenue += b.upiAmount; paymentMap.UPI.bills += 1; }
+        if (b.cardAmount > 0) { paymentMap.Card.revenue += b.cardAmount; paymentMap.Card.bills += 1; }
+      } else {
+        const key = ['Cash', 'UPI', 'Card'].includes(b.payment) ? b.payment : 'Cash';
+        paymentMap[key].revenue += b.total;
+        paymentMap[key].bills += 1;
+      }
     });
-    const paymentSales = Object.values(paymentMap).sort((a, b) => b.revenue - a.revenue);
+    const paymentSales = Object.values(paymentMap).filter((p) => p.bills > 0).sort((a, b) => b.revenue - a.revenue);
 
     return { topItems, catSales, activeHours, hourLabels, hourValues, staffSales, tableSales, paymentSales };
   }, [bills, menu, rangeBounds]);

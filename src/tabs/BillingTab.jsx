@@ -49,6 +49,12 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   const [menuCategory, setMenuCategory] = useState('');
   const [gstPct, setGstPct] = useState(5);
   const [payment, setPayment] = useState('Cash');
+  // Split payment: same bill settled across more than one mode (e.g. part
+  // Cash, part UPI). Off by default - the existing single-mode buttons.
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [splitCash, setSplitCash] = useState('');
+  const [splitUpi, setSplitUpi] = useState('');
+  const [splitCard, setSplitCard] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [waivedOffInput, setWaivedOffInput] = useState(''); // settlement-time round-down, e.g. ₹720 bill settled for ₹700
   // Delivery/Container/Service charge are opt-in per bill (most bills use
@@ -63,7 +69,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   const [addTableOpen, setAddTableOpen] = useState(false);
   const [shiftTableFor, setShiftTableFor] = useState(null); // table name whose whole order is being shifted
   const [shiftItemFor, setShiftItemFor] = useState(null); // { table, menuId, name }
-  const [confirmRemoveTable, setConfirmRemoveTable] = useState(null);
   const [confirmCancelItem, setConfirmCancelItem] = useState(null); // { menuId, sentQty, name, station }
   const [customerPromptFor, setCustomerPromptFor] = useState(null); // table name, when it's a fresh (vacant) table
   const [, setTick] = useState(0);
@@ -102,11 +107,20 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   const roundedTotal = Math.round(total);
   const roundOff = roundedTotal - total;
 
+  const splitSum = (parseFloat(splitCash) || 0) + (parseFloat(splitUpi) || 0) + (parseFloat(splitCard) || 0);
+  const splitRemaining = roundedTotal - splitSum;
+  const splitBalanced = Math.abs(splitRemaining) < 1;
+
+  // Mirrors the per-card status pill in the grid (VACANT/RUNNING/KOT Sent),
+  // computed here too since the detail view's header needs it outside the
+  // grid's own map loop.
+  const activeKotFired = Object.keys(activeState?.kotSent || {}).length > 0;
+  const activeElapsedMin = items.length > 0 && activeState?.startedAt ? Math.floor((Date.now() - activeState.startedAt) / 60000) : null;
+
   // Writes one table's state, creating the row if it didn't exist yet.
-  // Rows are only ever removed explicitly (clearTable/completeBill/
-  // doRemoveTable) - not just because items happens to be empty right now,
-  // since customer details can legitimately be captured before the first
-  // item is added.
+  // Rows are only ever removed explicitly (clearTable/completeBill) - not
+  // just because items happens to be empty right now, since customer
+  // details can legitimately be captured before the first item is added.
   function patchTableState(tableName, patch) {
     setTableStates((prev) => {
       const existing = prev.find((ts) => ts.id === tableName);
@@ -127,17 +141,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     setCustomerPhone('');
     setCustomerPromptFor(clean);
     setAddTableOpen(false);
-  }
-
-  function removeTable(name) {
-    if ((stateFor(name)?.items || []).length > 0) { setConfirmRemoveTable(name); return; }
-    doRemoveTable(name);
-  }
-
-  function doRemoveTable(name) {
-    setTableRows(tableRows.filter((t) => t.name !== name));
-    setTableStates(tableStates.filter((ts) => ts.id !== name));
-    if (activeTable === name) setActiveTable(null);
   }
 
   // A customer's self-order (via QR) lands here as a pending request, never
@@ -367,10 +370,18 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
   async function completeBill() {
     if (!activeTable) { alert('Pehle ek table/token select karein.'); return; }
     if (items.length === 0) { alert('Order khaali hai. Pehle items add karo.'); return; }
+    if (splitPayment && !splitBalanced) { alert('Split payment ka total bill amount ke barabar hona chahiye.'); return; }
 
     const staffMember = staff.find((s) => s.id === servedBy);
     const phone = customerPhone.trim();
     const waivedOff = restricted ? 0 : Math.max(0, Math.min(parseFloat(waivedOffInput) || 0, roundedTotal)); // waiving is Admin/Super-Admin only, same as discount
+
+    // Every bill carries all three amounts regardless of whether it was
+    // split - a single-mode bill just has one of them equal to the total -
+    // so Cash Audit/Dashboard never need to branch on split-or-not.
+    const cashAmount = splitPayment ? (parseFloat(splitCash) || 0) : (payment === 'Cash' ? roundedTotal : 0);
+    const upiAmount = splitPayment ? (parseFloat(splitUpi) || 0) : (payment === 'UPI' ? roundedTotal : 0);
+    const cardAmount = splitPayment ? (parseFloat(splitCard) || 0) : (payment === 'Card' ? roundedTotal : 0);
 
     const bill = {
       id: uid(),
@@ -379,7 +390,8 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
       table: activeTable,
       items: items.map((o) => ({ name: o.name, qty: o.qty, price: o.price })),
       subtotal, gstPct, gst, discount: effectiveDiscount, deliveryCharge, containerCharge, serviceCharge, waivedOff, total: roundedTotal, roundOff,
-      payment,
+      payment: splitPayment ? 'Split' : payment,
+      cashAmount, upiAmount, cardAmount,
       staffId: staffMember?.id || null,
       staffName: staffMember?.name || null,
       billedBy: billerName,
@@ -416,6 +428,10 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     setCustomerPhone('');
     setServedBy('');
     setWaivedOffInput('');
+    setSplitPayment(false);
+    setSplitCash('');
+    setSplitUpi('');
+    setSplitCard('');
     setReceipt({ bill, mode: 'print' });
   }
 
@@ -430,6 +446,11 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
     setShowDeliveryCharge(!!st?.deliveryCharge);
     setShowContainerCharge(!!st?.containerCharge);
     setShowServiceCharge(!!st?.serviceCharge);
+    setPayment('Cash');
+    setSplitPayment(false);
+    setSplitCash('');
+    setSplitUpi('');
+    setSplitCard('');
     // Fresh table (no order yet) - ask for customer details before they
     // start punching items in. Skippable - not every guest wants to share.
     if (!st) setCustomerPromptFor(t);
@@ -548,6 +569,8 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
 
   return (
     <section>
+      {!activeTable && (
+      <>
       <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
         <h2 className="text-lg font-bold m-0">Floor / Table Status</h2>
         <div className="flex items-center gap-2">
@@ -637,12 +660,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
                   : 'border-good/30 text-ink'
               }`}
             >
-              <span
-                className={`absolute top-1.5 right-2 text-xs font-bold opacity-60 hover:opacity-100 ${isActive ? 'text-white' : 'text-ink'}`}
-                onClick={(e) => { e.stopPropagation(); removeTable(t); }}
-              >
-                ×
-              </span>
               <div className="flex items-center justify-between">
                 <span className="font-headline-sm text-lg font-extrabold leading-none">{t}</span>
                 {elapsedMin !== null && (
@@ -670,6 +687,21 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
           );
         })}
         {tables.length === 0 && <p className="text-muted text-sm col-span-full">Koi table nahi hai. "+ Table" se add karein.</p>}
+      </div>
+      </>
+      )}
+
+      {activeTable && (
+      <>
+      <div className="flex items-center gap-2.5 flex-wrap mb-3">
+        <button onClick={() => setActiveTable(null)} className="px-3 py-2 rounded-lg text-sm font-semibold bg-bg border border-border hover:text-ink shrink-0">
+          ← Back
+        </button>
+        <h2 className="text-lg font-bold m-0">{activeTable}</h2>
+        <span className={`inline-flex w-fit items-center px-1.5 py-0.5 rounded-full text-[0.62rem] font-bold uppercase ${items.length > 0 ? 'text-pending-text' : 'text-good-text'}`}>
+          {items.length > 0 ? (activeKotFired ? 'KOT Sent' : 'Running') : 'Vacant'}
+        </span>
+        {activeElapsedMin !== null && <span className="text-xs text-muted font-semibold">{activeElapsedMin}m</span>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-5">
@@ -709,18 +741,14 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
 
         <div className="bg-surface border border-border rounded-lg flex flex-col overflow-hidden">
           <div className="px-4 pt-4 flex items-center justify-between gap-2">
-            <h2 className="text-lg font-bold m-0">{activeTable ? `Current Order — ${activeTable}` : 'Select a table to start order'}</h2>
-            {activeTable && (
-              <button onClick={() => setShiftTableFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink shrink-0">
-                Shift Table
-              </button>
-            )}
+            <h2 className="text-lg font-bold m-0">Current Order</h2>
+            <button onClick={() => setShiftTableFor(activeTable)} className="px-2.5 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border hover:text-ink shrink-0">
+              Shift Table
+            </button>
           </div>
           <div className="min-h-[100px] max-h-[340px] overflow-y-auto mt-2.5 px-4">
             {items.length === 0 && (
-              <div className="text-muted text-sm text-center py-5">
-                {activeTable ? 'No items added yet. Click menu items to add.' : 'Table select karke items add karein.'}
-              </div>
+              <div className="text-muted text-sm text-center py-5">No items added yet. Click menu items to add.</div>
             )}
 
             {(() => {
@@ -929,19 +957,50 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
               <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional - for loyalty points" className="px-2 py-1.5 border border-border rounded-md flex-1 min-w-[140px]" />
             </div>
 
-            <div className="grid grid-cols-3 gap-2 mt-3">
-              {['Cash', 'UPI', 'Card'].map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setPayment(mode)}
-                  className={`py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
-                    payment === mode ? 'bg-good text-white border-good' : 'bg-bg border-border text-muted'
-                  }`}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted mt-3">
+              <input
+                type="checkbox" checked={splitPayment}
+                onChange={(e) => { setSplitPayment(e.target.checked); setSplitCash(''); setSplitUpi(''); setSplitCard(''); }}
+                className="w-3.5 h-3.5"
+              />
+              Split Payment (Cash + UPI + Card)
+            </label>
+
+            {!splitPayment ? (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {['Cash', 'UPI', 'Card'].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setPayment(mode)}
+                    className={`py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                      payment === mode ? 'bg-good text-white border-good' : 'bg-bg border-border text-muted'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-muted">Cash</label>
+                    <input type="number" min="0" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} placeholder="0" className="px-2 py-1.5 border border-border rounded-md text-sm" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-muted">UPI</label>
+                    <input type="number" min="0" value={splitUpi} onChange={(e) => setSplitUpi(e.target.value)} placeholder="0" className="px-2 py-1.5 border border-border rounded-md text-sm" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-muted">Card</label>
+                    <input type="number" min="0" value={splitCard} onChange={(e) => setSplitCard(e.target.value)} placeholder="0" className="px-2 py-1.5 border border-border rounded-md text-sm" />
+                  </div>
+                </div>
+                <p className={`text-xs mt-1.5 font-semibold ${splitBalanced ? 'text-good' : 'text-bad'}`}>
+                  {splitBalanced ? '✓ Total match ho gaya' : splitRemaining > 0 ? `${rupee(splitRemaining)} aur baaki hai` : `${rupee(-splitRemaining)} zyada ho gaya`}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2 p-4 mt-3 bg-ink sticky bottom-0">
@@ -961,7 +1020,11 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
             )}
             <button onClick={clearTable} className="py-2.5 rounded-lg text-sm font-semibold bg-white/10 text-white hover:bg-white/20">Clear Table</button>
             <button onClick={sendToKitchen} className="py-2.5 rounded-lg text-sm font-semibold bg-secondary text-white hover:bg-secondary-dark">Fire KOT</button>
-            <button onClick={completeBill} className="col-span-2 py-3 rounded-lg text-base font-bold bg-good text-white hover:opacity-90 shadow-tile active:translate-y-0.5">
+            <button
+              onClick={completeBill}
+              disabled={splitPayment && !splitBalanced}
+              className="col-span-2 py-3 rounded-lg text-base font-bold bg-good text-white hover:opacity-90 shadow-tile active:translate-y-0.5 disabled:opacity-40 disabled:pointer-events-none"
+            >
               {!restricted && parseFloat(waivedOffInput) > 0
                 ? `Settle & Close Table — ${rupee(roundedTotal - Math.min(parseFloat(waivedOffInput) || 0, roundedTotal))} (${rupee(roundedTotal)} - waived)`
                 : `Settle & Close Table — ${rupee(roundedTotal)}`}
@@ -969,6 +1032,8 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
           </div>
         </div>
       </div>
+      </>
+      )}
 
       <Modal open={!!receipt} onClose={() => setReceipt(null)} printArea>
         {receipt && <ReceiptContent bill={receipt.bill} restaurantName={restaurantName} restaurantDetails={restaurantDetails} />}
@@ -1051,14 +1116,6 @@ export default function BillingTab({ restaurantName, restaurantDetails, profile,
           <Btn onClick={() => setShiftItemFor(null)}>Cancel</Btn>
         </ModalActions>
       </Modal>
-
-      <ConfirmModal
-        open={!!confirmRemoveTable}
-        title="Remove Table"
-        message={confirmRemoveTable ? `Table "${confirmRemoveTable}" mein pending order hai. Phir bhi remove karein?` : ''}
-        onConfirm={() => { doRemoveTable(confirmRemoveTable); setConfirmRemoveTable(null); }}
-        onCancel={() => setConfirmRemoveTable(null)}
-      />
 
       <ConfirmModal
         open={!!confirmCancelItem}

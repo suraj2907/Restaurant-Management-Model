@@ -169,7 +169,7 @@ function AuthenticatedApp() {
   if (!profile || !profile.active) return <NoAccessScreen onLogout={signOut} />;
   return (
     <SubscriptionGate profile={profile}>
-      {profile.role === 'captain' ? <CaptainShell profile={profile} /> : <ManagerShell profile={profile} />}
+      {profile.role === 'captain' ? <CaptainShell profile={profile} /> : profile.role === 'inventory' ? <InventoryShell profile={profile} /> : <ManagerShell profile={profile} />}
     </SubscriptionGate>
   );
 }
@@ -288,6 +288,35 @@ function CaptainShell({ profile }) {
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5">
         <Suspense fallback={<TabFallback />}>
           <BillingTab restaurantName={name} restaurantDetails={details} profile={profile} restricted />
+        </Suspense>
+        <AppFooter />
+      </main>
+    </div>
+  );
+}
+
+// Inventory: a dedicated login (created by Admin/Super Admin) that only
+// ever sees the Inventory screen - same single-purpose shell pattern as
+// Captain's. `restricted` hides the "Edit" action on items (name/unit/
+// cost/min stay Admin/Super Admin only); Add/Log In-Out/Remove all work.
+function InventoryShell({ profile }) {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <header className="flex items-center gap-2.5 px-4 py-3 bg-surface border-b border-border">
+        <span className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center font-extrabold text-sm shrink-0">
+          {(profile.name || 'I')[0].toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block font-bold text-sm text-ink truncate">{profile.name}</span>
+          <span className="text-[0.68rem] text-muted">Inventory</span>
+        </div>
+        <button onClick={signOut} className="w-9 h-9 flex items-center justify-center rounded-lg bg-bg border border-border shrink-0" aria-label="Logout" title="Logout">
+          <Icon name="logout" className="w-4 h-4" />
+        </button>
+      </header>
+      <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5">
+        <Suspense fallback={<TabFallback />}>
+          <InventoryTab restricted profile={profile} />
         </Suspense>
         <AppFooter />
       </main>
@@ -487,7 +516,7 @@ function ManagerShell({ profile }) {
             {activeTab === 'dashboard' && <DashboardTab restaurantName={name} restaurantDetails={details} />}
             {activeTab === 'reports' && <ReportsTab />}
             {activeTab === 'audit' && <CashAuditTab />}
-            {activeTab === 'inventory' && <InventoryTab />}
+            {activeTab === 'inventory' && <InventoryTab profile={profile} />}
             {activeTab === 'expenses' && <ExpensesTab />}
             {activeTab === 'staff' && <StaffTab />}
             {activeTab === 'vendors' && <VendorsTab />}

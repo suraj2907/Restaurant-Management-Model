@@ -34,13 +34,14 @@ Deno.serve(async (req) => {
 
     const { name, email, password, role } = await req.json();
     if (!name || !email || !password || !role) return json({ error: 'name, email, password, role are required' }, 400);
-    if (!['admin', 'captain'].includes(role)) return json({ error: 'role must be admin or captain' }, 400);
+    if (!['admin', 'captain', 'inventory'].includes(role)) return json({ error: 'role must be admin, captain or inventory' }, 400);
     if (password.length < 6) return json({ error: 'Password kam se kam 6 characters ka ho' }, 400);
 
-    // super_admin can create admin or captain; admin can only create captain.
+    // super_admin can create admin, captain or inventory; admin can create
+    // captain or inventory (never another admin).
     const allowed =
       callerProfile.role === 'super_admin' ||
-      (callerProfile.role === 'admin' && role === 'captain');
+      (callerProfile.role === 'admin' && (role === 'captain' || role === 'inventory'));
     if (!allowed) return json({ error: 'Aapke paas ye account banane ki permission nahi hai' }, 403);
 
     const admin = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));

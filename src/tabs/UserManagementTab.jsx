@@ -3,20 +3,21 @@ import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { createUser } from '../lib/auth.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 
-const ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', captain: 'Captain' };
+const ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', captain: 'Captain', inventory: 'Inventory' };
 
-// Super Admin manages Admin + Captain accounts; an Admin manages only
-// Captain accounts (enforced again server-side by the create-user function
-// and by RLS on `profiles` - this prop just decides what's shown/offered).
+// Super Admin manages Admin + Captain + Inventory accounts; an Admin
+// manages Captain + Inventory (never Admin) - enforced again server-side by
+// the create-user function and by RLS on `profiles`, this prop just
+// decides what's shown/offered.
 export default function UserManagementTab({ viewerRole }) {
   const [profiles, setProfiles, loaded] = useSupabaseTable('profiles', []);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'captain' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const creatable = viewerRole === 'super_admin' ? ['admin', 'captain'] : ['captain'];
+  const creatable = viewerRole === 'super_admin' ? ['admin', 'captain', 'inventory'] : ['captain', 'inventory'];
   const visible = useMemo(
-    () => profiles.filter((p) => (viewerRole === 'super_admin' ? p.role !== 'super_admin' : p.role === 'captain')),
+    () => profiles.filter((p) => (viewerRole === 'super_admin' ? p.role !== 'super_admin' : p.role === 'captain' || p.role === 'inventory')),
     [profiles, viewerRole]
   );
 

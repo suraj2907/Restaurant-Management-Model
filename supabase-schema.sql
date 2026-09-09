@@ -951,3 +951,49 @@ alter table kot_tickets add column if not exists biller_role text;
 -- ============================================================
 
 alter table subscription add column if not exists is_demo boolean not null default true;
+
+-- ============================================================
+-- v20 migration: split/part payment - a bill can be settled with more than
+-- one payment mode (e.g. part Cash, part UPI). `bills.payment` stays a
+-- single label ('Cash'/'UPI'/'Card'/'Split'); these three new columns hold
+-- the actual amount collected via each mode so Cash Audit/Dashboard can
+-- attribute revenue correctly even for a split bill. Every bill going
+-- forward (split or not) populates all three - a single-mode bill just has
+-- one of them equal to the total and the other two zero - so downstream
+-- reads never need to branch on whether a bill was split.
+-- ============================================================
+
+alter table bills add column if not exists cash_amount numeric not null default 0;
+alter table bills add column if not exists upi_amount numeric not null default 0;
+alter table bills add column if not exists card_amount numeric not null default 0;
+
+-- ============================================================
+-- v21 migration: a fourth role, 'inventory' - a dedicated login (created by
+-- Admin or Super Admin) that only ever sees the Inventory screen. It can
+-- add items, log stock in/out, and remove items, but the app's UI hides
+-- the "Edit" action from it (editing name/unit/cost/min stays Admin/Super
+-- Admin only) - same UI-level restriction pattern already used for
+-- Captain (e.g. discount is hidden, not RLS-blocked). Reuses the existing
+-- has_resource()/_resource_map machinery as-is: 'inventory' and
+-- 'stock_log' already map to resource 'inventory' (see the v-numberless
+-- _resource_map insert above), so granting this role that one resource is
+-- all the RLS wiring needed - no new policies.
+--
+-- Also adds a free-text `category` to inventory items (the inventory
+-- role's own request - "let me organize stock however makes sense to me"),
+-- and records who logged each stock movement (mirrors kot_tickets'
+-- biller_name/biller_role) so Admin can see who did what.
+-- ============================================================
+
+alter table profiles drop constraint if exists profiles_role_check;
+alter table profiles add constraint profiles_role_check check (role in ('super_admin','admin','captain','inventory'));
+
+alter table role_permissions drop constraint if exists role_permissions_role_check;
+alter table role_permissions add constraint role_permissions_role_check check (role in ('admin','captain','inventory'));
+
+insert into role_permissions (id, role, resource, can_write) values ('inventory:inventory', 'inventory', 'inventory', true)
+  on conflict (role, resource) do update set can_write = true;
+
+alter table inventory add column if not exists category text;
+alter table stock_log add column if not exists logged_by_name text;
+alter table stock_log add column if not exists logged_by_role text;

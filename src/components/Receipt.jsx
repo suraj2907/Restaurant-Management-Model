@@ -1,5 +1,16 @@
 import { rupee } from '../lib/store.js';
 
+// A split bill's `payment` is just the label 'Split' - the customer needs
+// to see what they actually paid via which mode, not just that it was split.
+function paymentLabel(bill) {
+  if (bill.payment !== 'Split') return bill.payment;
+  const parts = [];
+  if (bill.cashAmount > 0) parts.push(`Cash ${rupee(bill.cashAmount)}`);
+  if (bill.upiAmount > 0) parts.push(`UPI ${rupee(bill.upiAmount)}`);
+  if (bill.cardAmount > 0) parts.push(`Card ${rupee(bill.cardAmount)}`);
+  return parts.join(' + ') || 'Split';
+}
+
 export function ReceiptContent({ bill, restaurantName, restaurantDetails }) {
   const dt = new Date(bill.ts);
   const halfGst = bill.gst / 2;
@@ -54,7 +65,7 @@ export function ReceiptContent({ bill, restaurantName, restaurantDetails }) {
           <div className="flex justify-between font-bold"><span>Amount Collected</span><span>{rupee(bill.total - bill.waivedOff)}</span></div>
         </>
       )}
-      <div className="flex justify-between"><span>Payment</span><span>{bill.payment}</span></div>
+      <div className="flex justify-between"><span>Payment</span><span>{paymentLabel(bill)}</span></div>
       <hr className="border-dashed my-2" />
       <div className="text-center text-xs text-muted">Thank you, visit again!</div>
       {restaurantDetails?.googleReviewLink && <div className="text-center text-xs text-muted mt-1">Review us on Google</div>}
@@ -92,7 +103,7 @@ export function downloadBill(bill, restaurantName, restaurantDetails) {
       'Waived Off'.padEnd(24) + `-${rupee(bill.waivedOff)}`.padStart(8),
       'Amount Collected'.padEnd(24) + rupee(bill.total - bill.waivedOff).padStart(8)
     ] : []),
-    `Payment: ${bill.payment}`,
+    `Payment: ${paymentLabel(bill)}`,
     '-'.repeat(32),
     'Thank you, visit again!'
   ];

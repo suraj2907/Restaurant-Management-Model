@@ -35,9 +35,31 @@ export default function CashAuditTab() {
   const vsYesterdayPct = yesterdayRevenue > 0 ? ((revenue - yesterdayRevenue) / yesterdayRevenue) * 100 : null;
   const avgBill = dayBills.length ? revenue / dayBills.length : 0;
   const kharcha = dayExpenses.reduce((s, x) => s + x.amount, 0);
+  // A split bill (part Cash, part UPI/Card) can't be keyed by one `payment`
+  // string - bucket its three amounts directly instead. Waived-off (a
+  // settlement-time round-down, never actually collected) still needs to
+  // come out of the cash-in-hand total; it's netted off Cash first since
+  // that's the mode a round-down courtesy is almost always given against.
+  // Bills from before split payments existed have all three amounts at 0,
+  // so they fall back to the old single-mode grouping.
   const byPayment = useMemo(() => {
     const map = {};
-    for (const b of dayBills) map[b.payment] = (map[b.payment] || 0) + (b.total - (b.waivedOff || 0));
+    for (const b of dayBills) {
+      const splitTotal = (b.cashAmount || 0) + (b.upiAmount || 0) + (b.cardAmount || 0);
+      if (splitTotal > 0) {
+        let waive = b.waivedOff || 0;
+        const cash = Math.max(0, (b.cashAmount || 0) - waive);
+        waive = Math.max(0, waive - (b.cashAmount || 0));
+        const upi = Math.max(0, (b.upiAmount || 0) - waive);
+        waive = Math.max(0, waive - (b.upiAmount || 0));
+        const card = Math.max(0, (b.cardAmount || 0) - waive);
+        map.Cash = (map.Cash || 0) + cash;
+        map.UPI = (map.UPI || 0) + upi;
+        map.Card = (map.Card || 0) + card;
+      } else {
+        map[b.payment] = (map[b.payment] || 0) + (b.total - (b.waivedOff || 0));
+      }
+    }
     return map;
   }, [dayBills]);
   const cashRevenue = byPayment.Cash || 0;

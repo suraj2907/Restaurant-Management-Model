@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { dbInsert } from '../lib/db.js';
-import { uid, todayStr, rupee } from '../lib/store.js';
+import { uid, todayStr, rupee, roleLabel } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
 import { SkeletonRows } from '../components/Skeleton.jsx';
 import Modal, { ModalActions, Btn } from '../components/Modal.jsx';
 
 const EXPENSE_CATEGORIES = ['Raw Material', 'Gas Cylinder', 'Rent', 'Electricity/Utility', 'Maintenance', 'Other'];
 
-export default function InventoryTab() {
+export default function InventoryTab({ restricted = false, profile }) {
   const [inv, setInv, invLoaded] = useSupabaseTable('inventory', []);
   const [log, setLog] = useSupabaseTable('stock_log', []);
   const [vendors] = useSupabaseTable('vendors', []);
@@ -26,6 +26,7 @@ export default function InventoryTab() {
       {
         id: uid(),
         name: f.name.value.trim(),
+        category: f.category.value.trim() || null,
         unit: f.unit.value.trim(),
         qty: parseFloat(f.qty.value),
         min: parseFloat(f.min.value),
@@ -41,6 +42,7 @@ export default function InventoryTab() {
     setInv(inv.map((i) => (i.id === editItem.id ? {
       ...i,
       name: f.name.value.trim(),
+      category: f.category.value.trim() || null,
       unit: f.unit.value.trim(),
       min: parseFloat(f.min.value),
       cost: parseFloat(f.cost.value) || 0
@@ -68,7 +70,7 @@ export default function InventoryTab() {
     if (vendorId && amount <= 0) { alert('Vendor select kiya hai to amount bhi daalna zaroori hai.'); return; }
 
     setInv(inv.map((i) => (i.id === modalItem.id ? { ...i, qty: type === 'in' ? i.qty + qty : i.qty - qty } : i)));
-    setLog([...log, { id: uid(), itemId: modalItem.id, itemName: modalItem.name, type, qty, vendor: vendor?.name || '', note, date: todayStr() }]);
+    setLog([...log, { id: uid(), itemId: modalItem.id, itemName: modalItem.name, type, qty, vendor: vendor?.name || '', note, date: todayStr(), loggedByName: profile?.name || null, loggedByRole: profile?.role || null }]);
 
     if (vendor && amount > 0) {
       const date = todayStr();
@@ -87,6 +89,11 @@ export default function InventoryTab() {
   }
 
   const recentLog = log.slice().reverse().slice(0, 15);
+  // Categories are freeform (the inventory role's own choice, not a fixed
+  // list) - this just powers the datalist so typing "Vegetables" once
+  // makes it selectable next time, without forcing every item into a
+  // predefined bucket.
+  const categories = [...new Set(inv.map((i) => i.category).filter(Boolean))].sort();
   const lowStock = inv.filter((i) => i.qty <= i.min);
   const inventoryValue = inv.reduce((s, i) => s + i.qty * (i.cost || 0), 0);
   const vendorPayable = vendors.reduce((sum, v) => {
@@ -113,6 +120,10 @@ export default function InventoryTab() {
 
       <form onSubmit={addItem} className="flex gap-2.5 flex-wrap mb-4 bg-surface border border-border p-3.5 rounded-lg">
         <input name="name" required placeholder="Item name (e.g. Paneer, LPG Cylinder)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <input name="category" list="inv-categories" placeholder="Category (e.g. Vegetables, Dairy)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
+        <datalist id="inv-categories">
+          {categories.map((c) => <option key={c} value={c} />)}
+        </datalist>
         <input name="unit" required placeholder="Unit (kg, ltr, pcs)" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="qty" type="number" step="0.01" required placeholder="Current stock" className="px-2.5 py-2 border border-border rounded-md text-sm" />
         <input name="min" type="number" step="0.01" required placeholder="Min stock alert level" className="px-2.5 py-2 border border-border rounded-md text-sm" />
@@ -130,14 +141,15 @@ export default function InventoryTab() {
       )}
 
       <TableScroll>
-        <DataTable columns={['Item', 'Unit', 'Stock', 'Min Level', 'Cost/Unit', 'Status', 'Actions']}>
-          {!invLoaded && <SkeletonRows rows={4} cols={7} />}
-          {invLoaded && inv.length === 0 && <EmptyRow span={7}>No inventory items yet.</EmptyRow>}
+        <DataTable columns={['Item', 'Category', 'Unit', 'Stock', 'Min Level', 'Cost/Unit', 'Status', 'Actions']}>
+          {!invLoaded && <SkeletonRows rows={4} cols={8} />}
+          {invLoaded && inv.length === 0 && <EmptyRow span={8}>No inventory items yet.</EmptyRow>}
           {invLoaded && inv.map((item) => {
             const low = item.qty <= item.min;
             return (
               <tr key={item.id}>
                 <td className={td}>{item.name}</td>
+                <td className={td}>{item.category || '-'}</td>
                 <td className={td}>{item.unit}</td>
                 <td className={td}>{item.qty}</td>
                 <td className={td}>{item.min}</td>
@@ -147,9 +159,11 @@ export default function InventoryTab() {
                   <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => openStockModal(item)}>
                     Log In/Out
                   </button>
-                  <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditItem(item)}>
-                    Edit
-                  </button>
+                  {!restricted && (
+                    <button className="px-3 py-1.5 rounded-md text-xs font-semibold bg-bg border border-border" onClick={() => setEditItem(item)}>
+                      Edit
+                    </button>
+                  )}
                   <button className="text-bad underline text-sm" onClick={() => setInv(inv.filter((i) => i.id !== item.id))}>
                     Remove
                   </button>
@@ -162,8 +176,8 @@ export default function InventoryTab() {
 
       <h2 className="text-lg font-bold mt-6 mb-3.5">Recent Stock Movements</h2>
       <TableScroll>
-        <DataTable columns={['Date', 'Item', 'Type', 'Qty', 'Vendor', 'Note']}>
-          {recentLog.length === 0 && <EmptyRow span={6}>Koi movement log nahi hai abhi.</EmptyRow>}
+        <DataTable columns={['Date', 'Item', 'Type', 'Qty', 'Vendor', 'Note', 'Logged By']}>
+          {recentLog.length === 0 && <EmptyRow span={7}>Koi movement log nahi hai abhi.</EmptyRow>}
           {recentLog.map((l) => (
             <tr key={l.id}>
               <td className={td}>{l.date}</td>
@@ -172,6 +186,7 @@ export default function InventoryTab() {
               <td className={td}>{l.qty}</td>
               <td className={td}>{l.vendor || '-'}</td>
               <td className={td}>{l.note || '-'}</td>
+              <td className={td}>{l.loggedByName ? `${l.loggedByName}${l.loggedByRole ? ` (${roleLabel(l.loggedByRole)})` : ''}` : '-'}</td>
             </tr>
           ))}
         </DataTable>
@@ -232,6 +247,10 @@ export default function InventoryTab() {
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-muted font-semibold">Item name</label>
               <input name="name" required defaultValue={editItem.name} className="px-2.5 py-2 border border-border rounded-md text-sm" />
+            </div>
+            <div className="flex flex-col gap-1 mb-3">
+              <label className="text-xs text-muted font-semibold">Category</label>
+              <input name="category" list="inv-categories" defaultValue={editItem.category || ''} placeholder="e.g. Vegetables, Dairy" className="px-2.5 py-2 border border-border rounded-md text-sm" />
             </div>
             <div className="flex flex-col gap-1 mb-3">
               <label className="text-xs text-muted font-semibold">Unit</label>
