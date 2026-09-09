@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useSupabaseTable } from '../lib/useSupabaseTable.js';
 import { uid, rupee, todayStr } from '../lib/store.js';
 import { TableScroll, DataTable, EmptyRow, td } from '../components/Table.jsx';
@@ -89,14 +90,34 @@ export default function CustomersTab() {
   const sortedCustomers = useMemo(() => customers.slice().sort((a, b) => b.totalSpent - a.totalSpent), [customers]);
   const customerRows = useMemo(() => sortedCustomers.map((c) => ({ ...c, udhar: udharBalance(c.id) })), [sortedCustomers, credit]);
 
+  function exportCustomers() {
+    const sheet = XLSX.utils.json_to_sheet(customerRows.map((c) => ({
+      Name: c.name || '',
+      Phone: c.phone,
+      'Join Date': c.joinDate,
+      Visits: c.visits,
+      'Total Spent': c.totalSpent,
+      Points: c.points,
+      'Udhar Balance': c.udhar
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'Customers');
+    XLSX.writeFile(wb, `customers-${todayStr()}.xlsx`);
+  }
+
   const totalPoints = customers.reduce((s, c) => s + c.points, 0);
   const totalUdhar = customerRows.reduce((s, c) => s + Math.max(0, c.udhar), 0);
   const vipThreshold = customers.length ? Math.max(2000, [...customers].sort((a, b) => b.totalSpent - a.totalSpent)[0]?.totalSpent * 0.6 || 0) : 0;
 
   return (
     <section>
-      <h2 className="text-lg font-bold mb-3.5">Customers, Loyalty &amp; Udhar</h2>
-      <p className="text-muted text-sm -mt-1 mb-3.5">
+      <div className="flex items-center justify-between flex-wrap gap-2.5 mb-1">
+        <h2 className="text-lg font-bold m-0">Customers, Loyalty &amp; Udhar</h2>
+        <button onClick={exportCustomers} disabled={customerRows.length === 0} className="px-3 py-1.5 rounded-md text-sm font-semibold bg-good text-white hover:opacity-90 disabled:opacity-50 whitespace-nowrap">
+          Export Excel
+        </button>
+      </div>
+      <p className="text-muted text-sm mb-3.5">
         Billing tab mein customer ka phone number daalne se automatically visits, spend aur points (₹100 = 1 point) track ho jaate hain. Udhar khata yahan se manually log karein.
       </p>
 
